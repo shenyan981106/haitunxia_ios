@@ -25,7 +25,10 @@ dependencies:
       ref: main
   
   superplayer_widget:
-    path: E:/PubCache/git/Player_Flutter-40949902aa6e96eca639a1fde59d63e77e6654b8/FlutterWidget/superplayer_widget
+    git:
+      url: https://github.com/shenyan981106/Player_Flutter
+      path: FlutterWidget/superplayer_widget
+      ref: main
   
   # === 本地存储和网络（纯 Dart，无需改动）===
   get_storage: ^2.1.1  
@@ -69,9 +72,6 @@ dependency_overrides:
       url: https://gitcode.com/openharmony-tpc/flutter_packages.git
       path: packages/path_provider/path_provider
       ref: br_path_provider-v2.1.4_ohos
-  # super_player - 使用本地路径解决依赖冲突
-  super_player:
-    path: E:/PubCache/git/Player_Flutter-40949902aa6e96eca639a1fde59d63e77e6654b8/Flutter
 
 flutter: 
   uses-material-design: true
