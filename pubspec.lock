@@ -141,18 +141,18 @@ packages:
     dependency: "direct main"
     description:
       name: dio
-      sha256: aff32c08f92787a557dd5c0145ac91536481831a01b4648136373cddb0e64f8c
+      sha256: "0df44ebba85e503958eb75d07eedd3c86275a58c1d3eda2f2ce8f0a2c3abbb3c"
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "5.9.2"
+    version: "5.11.0"
   dio_web_adapter:
     dependency: transitive
     description:
       name: dio_web_adapter
-      sha256: "2f9e64323a7c3c7ef69567d5c800424a11f8337b8b228bad02524c9fb3c1f340"
+      sha256: "0786d0b7295a373de356fc0af4f6f1d0ab2844ed31b19dfc5e7556b70e24212c"
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "2.1.2"
+    version: "2.2.1"
   fake_async:
     dependency: transitive
     description:
@@ -287,10 +287,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_smart_dialog
-      sha256: "18ee3a53e898e4b0c2898e498bb61ab65cedf56f00fc412ac66d986d33e246bf"
+      sha256: "7dd4078681291402ec39861d768787d27a0a9c4cd0912263a6a327654b96f6c1"
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "5.1.0"
+    version: "5.1.1"
   flutter_spinkit:
     dependency: transitive
     description:
@@ -461,6 +461,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "0.19.0"
+  js:
+    dependency: transitive
+    description:
+      name: js
+      sha256: f2c445dce49627136094980615a031419f7f3eb393237e4ecd97ac15dea343f3
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "0.6.7"
   json_annotation:
     dependency: transitive
     description:
@@ -586,7 +594,7 @@ packages:
     description:
       path: "packages/path_provider/path_provider"
       ref: "br_path_provider-v2.1.4_ohos"
-      resolved-ref: b279941230a0047c769edfac074306ebfe3fec34
+      resolved-ref: d0494a686ebc0d3148156cbd1435e5d1dbcfffcf
       url: "https://gitcode.com/openharmony-tpc/flutter_packages.git"
     source: git
     version: "2.1.4"
@@ -619,7 +627,7 @@ packages:
     description:
       path: "packages/path_provider/path_provider_ohos"
       ref: "br_path_provider-v2.1.4_ohos"
-      resolved-ref: b279941230a0047c769edfac074306ebfe3fec34
+      resolved-ref: d0494a686ebc0d3148156cbd1435e5d1dbcfffcf
       url: "https://gitcode.com/openharmony-sig/flutter_packages.git"
     source: git
     version: "2.2.9"
@@ -639,6 +647,24 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.3.0"
+  pdf_render:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: HEAD
+      resolved-ref: b57dd8fad5500ecaaff595363f44ded19bcffd89
+      url: "https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git"
+    source: git
+    version: "1.4.12"
+  pdf_render_ohos:
+    dependency: "direct main"
+    description:
+      path: ohos
+      ref: HEAD
+      resolved-ref: b57dd8fad5500ecaaff595363f44ded19bcffd89
+      url: "https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git"
+    source: git
+    version: "1.0.0"
   petitparser:
     dependency: transitive
     description:
@@ -675,10 +701,10 @@ packages:
     dependency: transitive
     description:
       name: posix
-      sha256: "185ef7606574f789b40f289c233efa52e96dead518aed988e040a10737febb07"
+      sha256: bc1bad54ad2b735816e31f8d4600cfde6c7839975085ddfbca48b6c9f7c4044e
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "6.5.0"
+    version: "6.5.2"
   rxdart:
     dependency: transitive
     description:
@@ -767,16 +793,20 @@ packages:
   super_player:
     dependency: "direct main"
     description:
-      path: "E:\\PubCache\\git\\Player_Flutter-40949902aa6e96eca639a1fde59d63e77e6654b8\\Flutter"
-      relative: false
-    source: path
+      path: Flutter
+      ref: main
+      resolved-ref: "40949902aa6e96eca639a1fde59d63e77e6654b8"
+      url: "https://github.com/LiteAVSDK/Player_Flutter"
+    source: git
     version: "13.4.0"
   superplayer_widget:
     dependency: "direct main"
     description:
-      path: "E:\\PubCache\\git\\Player_Flutter-40949902aa6e96eca639a1fde59d63e77e6654b8\\FlutterWidget\\superplayer_widget"
-      relative: false
-    source: path
+      path: "FlutterWidget/superplayer_widget"
+      ref: main
+      resolved-ref: "374c27ca0b04ee8e34f57f335e820e02ae7435f4"
+      url: "https://github.com/shenyan981106/Player_Flutter"
+    source: git
     version: "13.4.0"
   synchronized:
     dependency: transitive
@@ -902,10 +932,10 @@ packages:
     dependency: transitive
     description:
       name: uuid
-      sha256: "1fef9e8e11e2991bb773070d4656b7bd5d850967a2456cfc83cf47925ba79489"
+      sha256: "9b129329f58692f6e6578329498a8fe9fbe98f090beb764ffbb8ee2eadd01dcd"
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "4.5.3"
+    version: "4.6.0"
   vector_graphics:
     dependency: transitive
     description:

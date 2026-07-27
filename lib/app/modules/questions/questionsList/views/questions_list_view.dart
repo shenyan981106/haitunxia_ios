@@ -8,6 +8,7 @@ import '../controllers/questions_list_controller.dart';
 import '../../../../services/keepAliveWrapper.dart';
 import "../../../../services/screenAdapter.dart";
 import '../../../../services/snackbar_utils.dart';
+import '../../../../data/services/auth_service.dart';
 
 class QuestionsListView extends StatefulWidget {
   const QuestionsListView({super.key});
@@ -174,7 +175,7 @@ class _QuestionsListViewState extends State<QuestionsListView> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 curve: Curves.easeOut,
-                height: ScreenAdapter.height(84),
+                height: ScreenAdapter.height(100),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: isSelected
@@ -185,7 +186,7 @@ class _QuestionsListViewState extends State<QuestionsListView> {
                 child: Text(
                   tabs[index],
                   style: TextStyle(
-                    fontSize: ScreenAdapter.fontSize(34),
+                    fontSize: ScreenAdapter.fontSize(36),
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                     color: isSelected
                         ? const Color(0xFF3D7CFF)
@@ -557,9 +558,7 @@ class _ChapterCard extends StatelessWidget {
                         width: ScreenAdapter.width(70),
                         height: ScreenAdapter.width(70),
                         decoration: BoxDecoration(
-                          color: chapterIndex % 2 == 0
-                              ? const Color(0xFF3D7CFF)
-                              : const Color(0xFFFF9F43),
+                          color: const Color(0xFF3D7CFF),
                           borderRadius:
                               BorderRadius.circular(ScreenAdapter.width(16)),
                         ),
@@ -605,9 +604,7 @@ class _ChapterCard extends StatelessWidget {
                                           chapterProgress),
                                       child: Container(
                                         decoration: BoxDecoration(
-                                          color: chapterIndex % 2 == 0
-                                              ? const Color(0xFF3D7CFF)
-                                              : const Color(0xFFFF9F43),
+                                          color: const Color(0xFF3D7CFF),
                                           borderRadius: BorderRadius.circular(
                                               ScreenAdapter.width(4)),
                                         ),
@@ -663,6 +660,72 @@ class _ChapterCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  // 显示VIP提示弹窗
+  static void _showVipDialog() {
+    Get.dialog(
+      AlertDialog(
+        backgroundColor: Colors.white,
+        titlePadding: EdgeInsets.only(top: ScreenAdapter.height(56)),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: ScreenAdapter.width(48),
+          vertical: ScreenAdapter.height(28),
+        ),
+        actionsPadding: EdgeInsets.only(
+          bottom: ScreenAdapter.height(48),
+          top: ScreenAdapter.height(36),
+        ),
+        title: Text(
+          '提示',
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(50),
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF333333),
+          ),
+          textAlign: TextAlign.center,
+        ),
+        content: Text(
+          '该功能需要开通VIP会员才能使用',
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(38),
+            color: const Color(0xFF666666),
+          ),
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          Center(
+            child: SizedBox(
+              width: ScreenAdapter.width(360),
+              height: ScreenAdapter.height(92),
+              child: ElevatedButton(
+                onPressed: () {
+                  Get.back();
+                  Get.toNamed('/vip-center');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1890FF),
+                  shape: RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.circular(ScreenAdapter.width(12)),
+                  ),
+                ),
+                child: Text(
+                  '立即开通',
+                  style: TextStyle(
+                    fontSize: ScreenAdapter.fontSize(32),
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(ScreenAdapter.width(24)),
+        ),
+      ),
     );
   }
 
@@ -772,6 +835,11 @@ class _ChapterCard extends StatelessWidget {
             if (hasAction)
               GestureDetector(
                 onTap: () {
+                  if (questionType == 2 && !AuthService.to.isMember) {
+                    _showVipDialog();
+                    return;
+                  }
+
                   var cateId = section['id'];
 
                   print(

@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart' as dio_package;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:pdf_render/pdf_render_widgets.dart';
 import 'package:get/get.dart';
 import 'package:superplayer_widget/demo_superplayer_lib.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -78,7 +78,7 @@ class _CatalogItemWidgetState extends State<CatalogItemWidget> {
                   child: Text(
                     title,
                     style: TextStyle(
-                      fontSize: ScreenAdapter.fontSize(32),
+                      fontSize: ScreenAdapter.fontSize(40),
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF333333),
                     ),
@@ -157,7 +157,7 @@ class _CatalogItemWidgetState extends State<CatalogItemWidget> {
           padding: EdgeInsets.only(
             left: ScreenAdapter.width(32),
             right: ScreenAdapter.width(24),
-            top: ScreenAdapter.height(36),
+            top: ScreenAdapter.height(42),
             bottom: ScreenAdapter.height(36),
           ),
           decoration: BoxDecoration(
@@ -178,7 +178,7 @@ class _CatalogItemWidgetState extends State<CatalogItemWidget> {
                     Text(
                       lessonTitle,
                       style: TextStyle(
-                        fontSize: ScreenAdapter.fontSize(30),
+                        fontSize: ScreenAdapter.fontSize(34),
                         color:
                             isSelected ? Color(0xFF3D7CFF) : Color(0xFF333333),
                       ),
@@ -192,7 +192,7 @@ class _CatalogItemWidgetState extends State<CatalogItemWidget> {
                         Text(
                           displayType,
                           style: TextStyle(
-                            fontSize: ScreenAdapter.fontSize(24),
+                            fontSize: ScreenAdapter.fontSize(26),
                             color: Color(0xFF999999),
                           ),
                         ),
@@ -200,7 +200,7 @@ class _CatalogItemWidgetState extends State<CatalogItemWidget> {
                         Text(
                           '$studyCount次学习',
                           style: TextStyle(
-                            fontSize: ScreenAdapter.fontSize(24),
+                            fontSize: ScreenAdapter.fontSize(26),
                             color: Color(0xFF999999),
                           ),
                         ),
@@ -209,7 +209,7 @@ class _CatalogItemWidgetState extends State<CatalogItemWidget> {
                           Text(
                             '已学$progressPercent%',
                             style: TextStyle(
-                              fontSize: ScreenAdapter.fontSize(24),
+                              fontSize: ScreenAdapter.fontSize(28),
                               color: Color(0xFF999999),
                             ),
                           ),
@@ -534,88 +534,155 @@ class DetailsView extends GetView<DetailsController> {
   }
 
   /// 底部按钮：免费显示"立即订阅"，付费显示"立即购买"
+  /// 已购买/已订阅时不显示底部区域
   Widget _buildBottomButton(BuildContext context) {
     final detail = controller.courseDetail;
-    final bool isFree = detail['is_free']?.toString() == '1';
     final bool isPay =
         detail['is_pay']?.toString() == '1' || detail['is_pay'] == true;
+
+    if (isPay) {
+      return SizedBox.shrink();
+    }
+
+    final bool isFree = detail['is_free']?.toString() == '1';
     final String buttonText =
         isFree || AuthService.to.isMember ? '立即订阅' : '立即购买';
-    // 已支付时显示的文案和禁用状态
     final String disabledText = isFree ? '已订阅' : '已购买';
+    final String price = isFree ? '免费' : '${detail['price']}';
+    final String originalPrice = detail['original_price']?.toString() ?? '';
 
     return SafeArea(
       child: Container(
         width: double.infinity,
-        padding: EdgeInsets.symmetric(
-          horizontal: ScreenAdapter.width(32),
-          vertical: ScreenAdapter.height(20),
+        padding: EdgeInsets.only(
+          left: ScreenAdapter.width(32),
+          right: ScreenAdapter.width(32),
+          top: ScreenAdapter.height(20),
+          bottom: ScreenAdapter.height(40),
         ),
-        color: Colors.white,
-        child: ElevatedButton(
-          onPressed: isPay
-              ? null
-              : () async {
-                  if (isFree || AuthService.to.isMember) {
-                    // 免费课程或会员：弹出确认订阅弹窗
-                    final confirmed = await CommonDialog.show(
-                      title: '提示',
-                      content: '确定要订阅该课程吗？',
-                      confirmText: '确认',
-                      cancelText: '取消',
-                    );
-                    if (!confirmed) return;
-
-                    // 用户确认后调用订阅接口
-                    final courseId = detail['id']?.toString();
-                    if (courseId != null && courseId.isNotEmpty) {
-                      try {
-                        final response = await ApiClient.to.exam(
-                          'pay/redeem',
-                          method: 'POST',
-                          data: {'course_id': courseId},
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Color(0xFFEEEEEE), width: 1)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: ScreenAdapter.width(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isFree)
+                      Text(
+                        price,
+                        style: TextStyle(
+                          fontSize: ScreenAdapter.fontSize(36),
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF333333),
+                        ),
+                      )
+                    else
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '¥$price',
+                            style: TextStyle(
+                              fontSize: ScreenAdapter.fontSize(60),
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFE6B870),
+                            ),
+                          ),
+                          if (originalPrice.isNotEmpty)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                  left: ScreenAdapter.width(20)),
+                              child: Text(
+                                '¥$originalPrice',
+                                style: TextStyle(
+                                  fontSize: ScreenAdapter.fontSize(34),
+                                  color: Color(0xFF999999),
+                                  decoration: TextDecoration.lineThrough,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(width: ScreenAdapter.width(24)),
+            GestureDetector(
+              onTap: isPay
+                  ? null
+                  : () async {
+                      if (isFree || AuthService.to.isMember) {
+                        final confirmed = await CommonDialog.show(
+                          title: '提示',
+                          content: '确定要订阅该课程吗？',
+                          confirmText: '确认',
+                          cancelText: '取消',
                         );
-                        if (response.statusCode == 200) {
-                          final data = response.data;
-                          if (data is Map &&
-                              (data['code'] == 1 || data['code'] == 200)) {
-                            SnackbarUtils.showSuccess('订阅成功');
-                            // 刷新当前页面状态
-                            controller.getCourseDetail(
-                              int.tryParse(courseId) ?? 0,
+                        if (!confirmed) return;
+
+                        final courseId = detail['id']?.toString();
+                        if (courseId != null && courseId.isNotEmpty) {
+                          try {
+                            final response = await ApiClient.to.exam(
+                              'pay/redeem',
+                              method: 'POST',
+                              data: {'course_id': courseId},
                             );
-                          } else {
-                            SnackbarUtils.showError(
-                                data['msg']?.toString() ?? '订阅失败');
+                            if (response.statusCode == 200) {
+                              final data = response.data;
+                              if (data is Map &&
+                                  (data['code'] == 1 || data['code'] == 200)) {
+                                SnackbarUtils.showSuccess('订阅成功');
+                                controller.getCourseDetail(
+                                  int.tryParse(courseId) ?? 0,
+                                );
+                              } else {
+                                SnackbarUtils.showError(
+                                    data['msg']?.toString() ?? '订阅失败');
+                              }
+                            } else {
+                              SnackbarUtils.showError('订阅失败');
+                            }
+                          } catch (e) {
+                            SnackbarUtils.showError('订阅失败：$e');
                           }
-                        } else {
-                          SnackbarUtils.showError('订阅失败');
                         }
-                      } catch (e) {
-                        SnackbarUtils.showError('订阅失败：$e');
+                        return;
                       }
-                    }
-                    return;
-                  }
-                  // 非会员付费课程：跳转到确认下单页面
-                  Get.toNamed(Routes.ORDER_CONFIRM, arguments: detail);
-                },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: isPay ? Color(0xFFCCCCCC) : Color(0xFF3D9EFF),
-            foregroundColor: Colors.white,
-            padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(28)),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(ScreenAdapter.width(16)),
+                      Get.toNamed(Routes.ORDER_CONFIRM, arguments: detail);
+                    },
+              child: Transform.translate(
+                offset:
+                    Offset(-ScreenAdapter.width(6), ScreenAdapter.height(0)),
+                child: Container(
+                  width: ScreenAdapter.width(320),
+                  height: ScreenAdapter.height(108),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isPay ? Color(0xFFCCCCCC) : Color(0xFFFFB366),
+                    borderRadius:
+                        BorderRadius.circular(ScreenAdapter.width(64)),
+                  ),
+                  child: Text(
+                    isPay ? disabledText : buttonText,
+                    style: TextStyle(
+                      fontSize: ScreenAdapter.fontSize(38),
+                      fontWeight: FontWeight.w500,
+                      color: isPay ? Color(0xFF999999) : Colors.white,
+                    ),
+                  ),
+                ),
+              ),
             ),
-            elevation: 0,
-          ),
-          child: Text(
-            isPay ? disabledText : buttonText,
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(34),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          ],
         ),
       ),
     );
@@ -997,9 +1064,6 @@ class DetailsView extends GetView<DetailsController> {
               children: [
                 _infoRow('课程类型', courseType, showDivider: true),
                 _infoRow('难度', difficultyText, showDivider: true),
-                _infoRow('价格',
-                    '¥$price${originalPrice.isNotEmpty ? '   ¥$originalPrice' : ''}',
-                    highlightPrice: true, showDivider: true),
                 _infoRow('总课时', '$totalLessons', showDivider: true),
                 _infoRow('学员', students > 0 ? '$students' : '--',
                     showDivider: false),
@@ -1031,7 +1095,7 @@ class DetailsView extends GetView<DetailsController> {
           Text(
             label,
             style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(32),
+              fontSize: ScreenAdapter.fontSize(40),
               color: Color(0xFF666666),
             ),
           ),
@@ -1057,7 +1121,7 @@ class DetailsView extends GetView<DetailsController> {
         TextSpan(
             text: value,
             style: TextStyle(
-                fontSize: ScreenAdapter.fontSize(32), color: Color(0xFF333333)))
+                fontSize: ScreenAdapter.fontSize(40), color: Color(0xFF333333)))
       ];
     }
     // 解析 "¥价格   ¥原价" 格式
@@ -1070,8 +1134,8 @@ class DetailsView extends GetView<DetailsController> {
           text: '$part ',
           style: TextStyle(
             fontSize: isFirst
-                ? ScreenAdapter.fontSize(38)
-                : ScreenAdapter.fontSize(30),
+                ? ScreenAdapter.fontSize(42)
+                : ScreenAdapter.fontSize(34),
             color: isFirst ? Color(0xFFFF4D4F) : Color(0xFF999999),
             fontWeight: isFirst ? FontWeight.w500 : FontWeight.normal,
             decoration: !isFirst ? TextDecoration.lineThrough : null,
@@ -1082,7 +1146,7 @@ class DetailsView extends GetView<DetailsController> {
         spans.add(TextSpan(
             text: '$part ',
             style: TextStyle(
-                fontSize: ScreenAdapter.fontSize(32),
+                fontSize: ScreenAdapter.fontSize(36),
                 color: Color(0xFF333333))));
       }
     }
@@ -1121,7 +1185,7 @@ class DetailsView extends GetView<DetailsController> {
         child: Text(
           '暂无相关资料',
           style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(36),
+            fontSize: ScreenAdapter.fontSize(40),
             color: Color(0xFF999999),
           ),
         ),
@@ -1287,6 +1351,14 @@ class DetailsView extends GetView<DetailsController> {
               Divider(height: 1, color: Color(0xFFEEEEEE)),
               _actionItem('复制下载链接', () async {
                 Get.back();
+                final detail = controller.courseDetail;
+                final bool isPay = detail['is_pay']?.toString() == '1' ||
+                    detail['is_pay'] == true;
+                final bool isFree = detail['is_free']?.toString() == '1';
+                if (!isPay && !isFree && !AuthService.to.isMember) {
+                  SnackbarUtils.showError('请先购买或订阅课程');
+                  return;
+                }
                 await Clipboard.setData(ClipboardData(text: url));
                 SnackbarUtils.showSuccess('链接已复制');
               }),
@@ -1307,6 +1379,15 @@ class DetailsView extends GetView<DetailsController> {
   Future<void> _openPdfPreview(String url, String name) async {
     if (url.isEmpty) {
       SnackbarUtils.showError('文件地址无效');
+      return;
+    }
+
+    final detail = controller.courseDetail;
+    final bool isPay =
+        detail['is_pay']?.toString() == '1' || detail['is_pay'] == true;
+    final bool isFree = detail['is_free']?.toString() == '1';
+    if (!isPay && !isFree && !AuthService.to.isMember) {
+      SnackbarUtils.showError('请先购买或订阅课程');
       return;
     }
 
@@ -1335,8 +1416,7 @@ class DetailsView extends GetView<DetailsController> {
       final localPath = await _downloadToLocal(url, name);
       Get.back();
       if (localPath == null) return;
-      Get.to(() =>
-          _PdfPreviewPage(filePath: localPath, title: name, originalUrl: url));
+      Get.to(() => _PdfPreviewPage(filePath: localPath, title: name));
     } catch (e) {
       Get.back();
       SnackbarUtils.showError('预览失败: ${e.toString()}');
@@ -1347,6 +1427,15 @@ class DetailsView extends GetView<DetailsController> {
   Future<void> _downloadAndOpen(String url, String name) async {
     if (url.isEmpty) {
       SnackbarUtils.showError('文件地址无效');
+      return;
+    }
+
+    final detail = controller.courseDetail;
+    final bool isPay =
+        detail['is_pay']?.toString() == '1' || detail['is_pay'] == true;
+    final bool isFree = detail['is_free']?.toString() == '1';
+    if (!isPay && !isFree && !AuthService.to.isMember) {
+      SnackbarUtils.showError('请先购买或订阅课程');
       return;
     }
 
@@ -1522,13 +1611,9 @@ class _PdfPreviewPage extends StatefulWidget {
   final String filePath;
   final String title;
 
-  /// 原始网络URL
-  final String? originalUrl;
-
   const _PdfPreviewPage({
     required this.filePath,
     required this.title,
-    this.originalUrl,
   });
 
   @override
@@ -1536,86 +1621,14 @@ class _PdfPreviewPage extends StatefulWidget {
 }
 
 class _PdfPreviewPageState extends State<_PdfPreviewPage> {
-  late final WebViewController _controller;
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (_) => setState(() => isLoading = true),
-          onPageFinished: (_) => setState(() => isLoading = false),
-          onWebResourceError: (error) {
-            setState(() => isLoading = false);
-          },
-        ),
-      );
-
-    // 使用 PDF.js（国内CDN）渲染PDF
-    final pdfUrl = widget.originalUrl ?? widget.filePath;
-    final html = '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-  <script src="https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #525659; }
-    #toolbar { position:fixed;top:0;left:0;right:0;height:44px;background:#292b2e;color:#fff;display:flex;align-items:center;padding:0 12px;z-index:100;font-size:14px; }
-    #toolbar span { flex:1;text-align:center; }
-    #canvas-container { margin-top:44px;display:flex;justify-content:center;overflow:auto;height:calc(100vh - 44px); }
-    canvas { display: block; }
-  </style>
-</head>
-<body>
-  <div id="toolbar"><span id="page-num"></span></div>
-  <div id="canvas-container"><canvas id="pdf-canvas"></canvas></div>
-  <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    var url = '$pdfUrl';
-    var pdfDoc = null, pageNum = 1, pageRendering = false, pageNumPending = null, scale = 1.5;
-    var canvas = document.getElementById('pdf-canvas'), ctx = canvas.getContext('2d');
-
-    function renderPage(num) {
-      pageRendering = true;
-      pdfDoc.getPage(num).then(function(page) {
-        var viewport = page.getViewport({ scale: scale });
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        var renderContext = { canvasContext: ctx, viewport: viewport };
-        page.render(renderContext).promise.then(function() {
-          pageRendering = false;
-          document.getElementById('page-num').textContent = num + ' / ' + pdfDoc.numPages;
-          if (pageNumPending !== null) { renderPage(pageNumPending); pageNumPending = null; }
-        });
-      });
-    }
-
-    function queueRenderPage(num) {
-      if (pageRendering) { pageNumPending = num; } else { renderPage(num); }
-    }
-
-    function onNextPage() { if (pageNum >= pdfDoc.numPages) return; pageNum++; queueRenderPage(pageNum); }
-    function onPrevPage() { if (pageNum <= 1) return; pageNum--; queueRenderPage(pageNum); }
-
-    pdfjsLib.getDocument(url).promise.then(function(pdf) {
-      pdfDoc = pdf;
-      document.getElementById('page-num').textContent = '1 / ' + pdf.numPages;
-      renderPage(pageNum);
-    }).catch(function(err) { console.error(err); });
-
-    canvas.addEventListener('click', function(e) { var rect = canvas.getBoundingClientRect(); if (e.clientX - rect.left > rect.width / 2) { onNextPage(); } else { onPrevPage(); } });
-    canvas.style.cursor = 'pointer';
-  </script>
-</body>
-</html>''';
-
-    _controller.loadHtmlString(html);
+    Future.delayed(const Duration(milliseconds: 500), () {
+      setState(() => isLoading = false);
+    });
   }
 
   @override
@@ -1630,7 +1643,7 @@ class _PdfPreviewPageState extends State<_PdfPreviewPage> {
       ),
       body: Stack(
         children: [
-          WebViewWidget(controller: _controller),
+          PdfViewer.openFile(widget.filePath),
           if (isLoading) Center(child: CircularProgressIndicator()),
         ],
       ),

@@ -60,12 +60,45 @@ class AuthService extends GetxService {
         final storedMemberStatus = _storage.read<int>(_memberStatusKey);
         memberStatus.value = storedMemberStatus ?? 0;
         // token 会自动同步到 ApiClient（通过拦截器）
+
+        // 启动后立即获取最新用户信息（包含VIP状态）
+        _fetchUserInfo();
       } else {
         _clearState();
       }
     } catch (e) {
       debugPrint('AuthService: 加载认证状态失败?- $e');
       _clearState();
+    }
+  }
+
+  /// 获取用户详情（包含最新VIP信息）
+  /// 接口: /addons/exam/user/info
+  Future<void> _fetchUserInfo() async {
+    try {
+      final response = await ApiClient.to.post('addons/exam/user/info');
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data is Map && data['code'] == 1) {
+          final result = data['data'];
+          if (result is Map) {
+            final userMap = Map<String, dynamic>.from(result);
+            final updatedUser = UserModel.fromJson(userMap);
+            user.value = updatedUser;
+            _storage.write(_userKey, updatedUser.toJson());
+
+            // 更新会员状态
+            final mStatus = updatedUser.info?.status ?? 0;
+            memberStatus.value = mStatus;
+            _storage.write(_memberStatusKey, mStatus);
+
+            debugPrint('AuthService: 用户信息已更新');
+            debugPrint('AuthService: 会员状态: $mStatus');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('AuthService: 获取用户信息失败: $e');
     }
   }
 

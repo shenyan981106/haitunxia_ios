@@ -8,7 +8,6 @@ import '../../../data/services/auth_service.dart';
 import '../../../components/customer_service_dialog.dart';
 import '../../../services/snackbar_utils.dart';
 import 'user_info_view.dart';
-import 'vip_center_view.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../controllers/user_controller.dart';
 
@@ -76,12 +75,18 @@ class UserView extends GetView<UserController> {
                     _MenuItem(
                       title: '我的收藏',
                       icon: Icons.star_border,
-                      onTap: () => Get.toNamed('/my-favorites'),
+                      onTap: () => Get.toNamed('/my-favorites', arguments: {
+                        'subject_id':
+                            GlobalProjectController.to.currentProject.value?.id,
+                      }),
                     ),
                     _MenuItem(
                       title: '我的错题',
                       icon: Icons.error_outline,
-                      onTap: () => Get.toNamed('/questions/wrong'),
+                      onTap: () => Get.toNamed('/questions/wrong', arguments: {
+                        'subject_id':
+                            GlobalProjectController.to.currentProject.value?.id,
+                      }),
                     ),
                   ]),
                   SizedBox(height: ScreenAdapter.height(24)),
@@ -266,11 +271,13 @@ class UserView extends GetView<UserController> {
       onTap: () => Get.toNamed('/vip-center'),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(ScreenAdapter.width(26)),
-        child: Image.asset(
-          'assets/images/vip_open.jpg',
-          width: double.infinity,
-          fit: BoxFit.cover,
-        ),
+        child: Obx(() => Image.asset(
+              AuthService.to.isMember
+                  ? 'assets/images/vip_finish.png'
+                  : 'assets/images/vip_open.jpg',
+              width: double.infinity,
+              fit: BoxFit.cover,
+            )),
       ),
     );
   }

@@ -579,8 +579,8 @@ class _HomeViewState extends State<HomeView> {
       return Padding(
         padding: EdgeInsets.only(top: 24.h),
         child: Container(
-          height: 88.h,
-          padding: EdgeInsets.symmetric(horizontal: 26.w),
+          height: 110.h,
+          padding: EdgeInsets.symmetric(horizontal: 32.w),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24.r),
@@ -596,26 +596,26 @@ class _HomeViewState extends State<HomeView> {
             children: [
               Icon(
                 Icons.campaign,
-                size: 38.sp,
+                size: 48.sp,
                 color: const Color(0xFF3D7CFF),
               ),
-              SizedBox(width: 14.w),
+              SizedBox(width: 16.w),
               Text(
                 '公告',
                 style: TextStyle(
-                  fontSize: 30.sp,
+                  fontSize: 36.sp,
                   color: const Color(0xFF3D7CFF),
                   fontWeight: w500,
                 ),
               ),
-              SizedBox(width: 18.w),
+              SizedBox(width: 22.w),
               Expanded(
                 child: Text(
                   notice.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 30.sp,
+                    fontSize: 36.sp,
                     color: const Color(0xFF333333),
                   ),
                 ),

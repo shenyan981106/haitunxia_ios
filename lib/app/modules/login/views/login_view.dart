@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../data/providers/api_client.dart';
@@ -98,6 +99,9 @@ class LoginView extends GetView<LoginController> {
                                       controller:
                                           controller.phoneController.value,
                                       keyboardType: TextInputType.phone,
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.digitsOnly,
+                                      ],
                                       maxLength: 11,
                                       textAlignVertical:
                                           TextAlignVertical.center,

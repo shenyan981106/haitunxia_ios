@@ -104,6 +104,9 @@ class QuestionsFavoriteController extends GetxController {
   final RxString currentSortTime = '录入时间'.obs;
   final RxString currentSortOrder = '新添加在前'.obs;
 
+  // 当前科目ID
+  int? subjectId;
+
   @override
   void onInit() {
     super.onInit();
@@ -112,6 +115,13 @@ class QuestionsFavoriteController extends GetxController {
     } catch (e) {
       debugPrint('GlobalProjectController 获取失败: $e');
     }
+
+    // 从路由参数中获取 subject_id
+    final args = Get.arguments;
+    if (args != null && args is Map) {
+      subjectId = args['subject_id'];
+    }
+
     Future.delayed(const Duration(milliseconds: 100), () {
       _loadFavorites();
     });
@@ -130,6 +140,9 @@ class QuestionsFavoriteController extends GetxController {
     try {
       final params = <String, dynamic>{};
       params['order'] = currentSortOrder.value == '新添加在前' ? 'desc' : 'asc';
+      if (subjectId != null) {
+        params['subject_id'] = subjectId;
+      }
 
       final response = await ApiClient.to.getExam(
         'question/collectList',

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../data/providers/api_client.dart';
+import '../../../services/global_project_controller.dart';
 
 /// 收藏题目单项模型
 class FavoriteItem {
@@ -80,6 +81,8 @@ class FavoriteGroup {
 }
 
 class MyFavoritesController extends GetxController {
+  late final GlobalProjectController globalController;
+
   final RxList<FavoriteGroup> favoriteGroups = <FavoriteGroup>[].obs;
   final RxInt totalCount = 0.obs;
   final RxBool isLoading = true.obs;
@@ -99,6 +102,11 @@ class MyFavoritesController extends GetxController {
   @override
   void onReady() {
     super.onReady();
+    try {
+      globalController = GlobalProjectController.to;
+    } catch (e) {
+      debugPrint('GlobalProjectController 获取失败: $e');
+    }
     _loadFavorites();
   }
 
@@ -114,6 +122,14 @@ class MyFavoritesController extends GetxController {
     try {
       final params = <String, dynamic>{};
       params['order'] = currentSortOrder.value == '新添加在前' ? 'desc' : 'asc';
+
+      final args = Get.arguments as Map<String, dynamic>?;
+      final argSubjectId = args?['subject_id'];
+      if (argSubjectId != null) {
+        params['subject_id'] = argSubjectId;
+      } else {
+        params['subject_id'] = globalController.currentProject.value?.id;
+      }
 
       final response = await ApiClient.to.getExam(
         'question/collectList',

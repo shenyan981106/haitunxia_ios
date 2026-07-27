@@ -66,7 +66,7 @@ void main() async {
       builder: (context, child) {
         return GetMaterialApp(
           debugShowCheckedModeBanner: false,
-          title: '在线考试',
+          title: '海豚侠',
           initialRoute: initialRoute,
           getPages: AppPages.routes,
           builder: FlutterSmartDialog.init(),

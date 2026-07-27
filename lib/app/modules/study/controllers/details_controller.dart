@@ -156,6 +156,14 @@ class DetailsController extends GetxController {
   }
 
   void playCourseItem(dynamic item) {
+    final bool isPay = courseDetail['is_pay']?.toString() == '1' ||
+        courseDetail['is_pay'] == true;
+    final bool isFree = courseDetail['is_free']?.toString() == '1';
+    if (!isPay && !isFree && !AuthService.to.isMember) {
+      SnackbarUtils.showError('请先购买或订阅课程');
+      return;
+    }
+
     final String? videoUrl =
         item['url']?.toString() ?? item['video_url']?.toString();
     final String title = item['title']?.toString() ?? '课程视频';
@@ -229,9 +237,11 @@ class DetailsController extends GetxController {
     final currentIndex = items.indexWhere((item) {
       final itemId = int.tryParse(item['id']?.toString() ?? '');
       final itemUrl = item['url']?.toString() ?? item['video_url']?.toString();
+      final processedItemUrl =
+          itemUrl != null ? ApiClient.replaceUri(itemUrl) : '';
       return (_currentLessonId != null && itemId == _currentLessonId) ||
           (currentVideoUrl.value.isNotEmpty &&
-              itemUrl == currentVideoUrl.value);
+              processedItemUrl == currentVideoUrl.value);
     });
 
     if (currentIndex >= 0 && currentIndex < items.length - 1) {

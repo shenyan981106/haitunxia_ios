@@ -26,11 +26,12 @@ git push origin feature/你的功能名称
 代码说明
 1.运行命令：flutter run
 2.检查设备：flutter devices
-3.打包命令：flutter build apk --release
+3.打包命令：flutter build apk --release --target-platform android-arm64
 4.打包-notree：flutter build apk --release --no-tree-shake-icons
 5.版本更新：修改根目录pubspec.yaml version: x.x.x
 6.组件目录：lib\app\components  
-7.鸿蒙打包：E:\flutter_flutter\bin\flutter.bat build hap --release
+7.鸿蒙打包：flutter build hap --release
+flutter build hap --release --build-name=1.0.2 --build-number=10001
 
 # git提交规范
 1.提交时，使用英文描述，例如："feat: 实现用户登录功能"

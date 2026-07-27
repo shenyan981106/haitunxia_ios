@@ -1,10 +1,10 @@
 name: xmshop
-description: "A new Flutter project."
+description: "haitunxia"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish it to pub.dev
 
-version: 1.0.2
+version: 1.0.1
 environment:
   sdk: '>=3.3.0 <4.0.0'
 
@@ -46,6 +46,15 @@ dependencies:
   
   # === WebView用于替代PDF查看 ===
   webview_flutter: ^4.4.0
+  
+  # === PDF查看插件 ===
+  pdf_render:
+    git:
+      url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git
+  pdf_render_ohos:
+    git:
+      url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git
+      path: ohos
 
   # === 支付宝支付插件 ===
   tobias: ^5.1.2
@@ -111,4 +120,4 @@ flutter_native_splash:
     color: "#F5C842"
     icon_background_color: "#F5C842"
 tobias:
-  url_scheme: com.zgjan.haitunxia
+  url_scheme: app.haitunxia.com

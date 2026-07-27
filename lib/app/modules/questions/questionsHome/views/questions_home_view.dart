@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../data/services/auth_service.dart';
+import '../../../../components/common_dialog.dart';
 import '../controllers/questions_home_controller.dart';
 
 class QuestionsHomeView extends GetView<QuestionsHomeController> {
@@ -62,6 +63,14 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
       args['initialIndex'] = index;
       if (subjectId != null) {
         args['categoryId'] = subjectId;
+        args['subject_id'] = subjectId;
+      }
+    }
+
+    if (route == '/questions/favorite') {
+      final subject = controller.getCurrentSubject();
+      if (subject != null) {
+        args['subject_id'] = subject.id;
       }
     }
 
@@ -616,6 +625,10 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
   }
 
   Widget _buildToolsSection() {
+    // 获取当前选中的科目subjectId
+    final currentSubject = controller.getCurrentSubject();
+    final currentSubjectId = currentSubject?.id;
+
     // 固定工具模块（始终显示）
     final fixedTools = [
       {
@@ -669,10 +682,6 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
     ];
 
     return Obx(() {
-      // 获取当前选中的科目subjectId
-      final currentSubject = controller.getCurrentSubject();
-      final currentSubjectId = currentSubject?.id;
-
       // 从动态配置中筛选出属于当前科目的项
       final List<Map<String, dynamic>> dynamicItems = [];
       if (currentSubjectId != null) {
@@ -782,7 +791,13 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
     final bool isVipItem = title == '考前押题' || title == '核心母题';
 
     void handleTap() {
-      if (isVipItem && !AuthService.to.isMember) {
+      if (title == '快问老师') {
+        CommonDialog.show(
+          title: '提示',
+          content: '敬请期待',
+          showCancelButton: false,
+        );
+      } else if (isVipItem && !AuthService.to.isMember) {
         _showVipDialog();
       } else {
         _handleCardTap(item);

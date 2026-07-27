@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../services/screenAdapter.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/providers/api_client.dart';
-import '../../../services/snackbar_utils.dart';
 import '../../../components/common_dialog.dart';
 import '../controllers/vip_center_controller.dart';
 
@@ -16,25 +16,27 @@ class VipCenterView extends GetView<VipCenterController> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FB),
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            _buildHeader(),
-            Expanded(
-              child: ListView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: ScreenAdapter.width(30),
-                  vertical: ScreenAdapter.height(20),
+            Column(
+              children: [
+                _buildHeader(),
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ScreenAdapter.width(30),
+                      vertical: ScreenAdapter.height(20),
+                    ),
+                    children: [
+                      _buildPlansSection(),
+                      SizedBox(height: ScreenAdapter.height(40)),
+                      SizedBox(height: ScreenAdapter.height(180)),
+                    ],
+                  ),
                 ),
-                children: [
-                  _buildPrivilegeSection(),
-                  SizedBox(height: ScreenAdapter.height(20)),
-                  _buildPlansSection(),
-                  SizedBox(height: ScreenAdapter.height(40)),
-                  _buildBottomButton(),
-                  SizedBox(height: ScreenAdapter.height(20)),
-                ],
-              ),
+              ],
             ),
+            _buildBottomPayBar(),
           ],
         ),
       ),
@@ -249,80 +251,6 @@ class VipCenterView extends GetView<VipCenterController> {
     return info?.expireTimeText ?? '';
   }
 
-  Widget _buildPrivilegeSection() {
-    return Container(
-      margin: EdgeInsets.only(
-        top: ScreenAdapter.height(40),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '会员特权',
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(43),
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFF333333),
-            ),
-          ),
-          SizedBox(height: ScreenAdapter.height(30)),
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: ScreenAdapter.width(24),
-              vertical: ScreenAdapter.height(24),
-            ),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(
-                ScreenAdapter.width(24),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildPrivilegeItem(Icons.stars, '积分功能'),
-                _buildPrivilegeItem(Icons.menu_book, '限用题库'),
-                _buildPrivilegeItem(Icons.assignment, '限用试卷'),
-                _buildPrivilegeItem(Icons.school, '免费考场'),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPrivilegeItem(IconData icon, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: ScreenAdapter.width(140),
-          height: ScreenAdapter.width(140),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF6E5),
-            borderRadius: BorderRadius.circular(
-              ScreenAdapter.width(40),
-            ),
-          ),
-          child: Icon(
-            icon,
-            color: const Color(0xFFF1A83A),
-            size: ScreenAdapter.fontSize(64),
-          ),
-        ),
-        SizedBox(height: ScreenAdapter.height(10)),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(34),
-            color: const Color(0xFF666666),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildPlansSection() {
     return Obx(() {
       final configs = controller.memberConfigs;
@@ -493,389 +421,8 @@ class VipCenterView extends GetView<VipCenterController> {
     );
   }
 
-  Widget _buildBottomButton() {
-    return Column(
-      children: [
-        _buildCommonButton(
-          text: '立即开通',
-          onTap: () {
-            _showPayMethodSheet();
-          },
-        ),
-        SizedBox(height: ScreenAdapter.height(20)),
-        _buildActivationCodeButton(),
-        SizedBox(height: ScreenAdapter.height(30)),
-      ],
-    );
-  }
-
-  Widget _buildActivationCodeButton() {
-    return _buildCommonButton(
-      text: '激活码兑换',
-      onTap: () => _showActivationCodeDialog(),
-    );
-  }
-
-  void _showActivationCodeDialog() {
-    final textController = TextEditingController();
-    showDialog(
-      context: Get.context!,
-      barrierColor: Colors.black45,
-      builder: (context) {
-        return Center(
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: ScreenAdapter.width(820),
-              padding: EdgeInsets.fromLTRB(
-                ScreenAdapter.width(48),
-                ScreenAdapter.height(48),
-                ScreenAdapter.width(48),
-                ScreenAdapter.height(40),
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(ScreenAdapter.width(20)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 标题 - 居中
-                  Text(
-                    '激活码兑换',
-                    style: TextStyle(
-                      fontSize: ScreenAdapter.fontSize(42),
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF333333),
-                    ),
-                  ),
-                  SizedBox(height: ScreenAdapter.height(32)),
-
-                  // 输入框
-                  Container(
-                    height: ScreenAdapter.height(90),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F6FA),
-                      borderRadius:
-                          BorderRadius.circular(ScreenAdapter.width(12)),
-                      border: Border.all(
-                        color: const Color(0xFFE8E9ED),
-                        width: 1,
-                      ),
-                    ),
-                    child: TextField(
-                      controller: textController,
-                      textAlignVertical: TextAlignVertical.center,
-                      decoration: InputDecoration(
-                        hintText: '请输入激活码',
-                        hintStyle: TextStyle(
-                          color: const Color(0xFFBBBBCC),
-                          fontSize: ScreenAdapter.fontSize(28),
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: ScreenAdapter.width(24),
-                          vertical: ScreenAdapter.height(16),
-                        ),
-                        isDense: true,
-                      ),
-                      style: TextStyle(
-                        fontSize: ScreenAdapter.fontSize(30),
-                        color: const Color(0xFF999999),
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: ScreenAdapter.height(36)),
-
-                  // 确认按钮 - 居中，蓝色圆角按钮
-                  GestureDetector(
-                    onTap: () async {
-                      final code = textController.text.trim();
-                      if (code.isEmpty) {
-                        SnackbarUtils.showError('请输入激活码');
-                        return;
-                      }
-                      Navigator.pop(context);
-                      await controller.exchangeActivationCode(code);
-                    },
-                    child: Container(
-                      width: ScreenAdapter.width(400),
-                      height: ScreenAdapter.height(80),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF4A9FF5), Color(0xFF3B8DE6)],
-                        ),
-                        borderRadius:
-                            BorderRadius.circular(ScreenAdapter.width(40)),
-                      ),
-                      child: Text(
-                        '确认兑换',
-                        style: TextStyle(
-                          fontSize: ScreenAdapter.fontSize(32),
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// 显示支付方式选择底部弹窗
-  void _showPayMethodSheet() {
-    showModalBottomSheet(
-      context: Get.context!,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => _buildPayMethodSheet(),
-    );
-  }
-
-  Widget _buildPayMethodSheet() {
-    return StatefulBuilder(
-      builder: (context, setSheetState) {
-        return Obx(() {
-          final selectedPayMethod = controller.selectedPayMethod.value;
-          return Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(ScreenAdapter.width(40)),
-              ),
-            ),
-            padding: EdgeInsets.fromLTRB(
-              ScreenAdapter.width(40),
-              ScreenAdapter.height(50),
-              ScreenAdapter.width(40),
-              ScreenAdapter.height(60),
-            ),
-            child: SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 标题
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '选择支付方式',
-                        style: TextStyle(
-                          fontSize: ScreenAdapter.fontSize(42),
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF333333),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Icon(
-                          Icons.close,
-                          size: ScreenAdapter.fontSize(56),
-                          color: const Color(0xFF999999),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: ScreenAdapter.height(30)),
-
-                  // 套餐信息
-                  Obx(() {
-                    final configs = controller.memberConfigs;
-                    final selectedIndex = controller.selectedIndex.value;
-                    if (configs.isEmpty || selectedIndex >= configs.length) {
-                      return const SizedBox.shrink();
-                    }
-                    final selected = configs[selectedIndex];
-                    return Container(
-                      padding: EdgeInsets.all(ScreenAdapter.width(24)),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFBF1E5),
-                        borderRadius: BorderRadius.circular(
-                          ScreenAdapter.width(20),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            selected['title']?.toString() ?? '会员',
-                            style: TextStyle(
-                              fontSize: ScreenAdapter.fontSize(36),
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFFE89A3C),
-                            ),
-                          ),
-                          SizedBox(width: ScreenAdapter.width(16)),
-                          Text(
-                            selected['price']?.toString() ?? '',
-                            style: TextStyle(
-                              fontSize: ScreenAdapter.fontSize(48),
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFFE89A3C),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                  SizedBox(height: ScreenAdapter.height(30)),
-
-                  // 支付方式选项
-                  Text(
-                    '支付方式',
-                    style: TextStyle(
-                      fontSize: ScreenAdapter.fontSize(34),
-                      color: const Color(0xFF666666),
-                    ),
-                  ),
-                  SizedBox(height: ScreenAdapter.height(20)),
-                  Row(
-                    children: [
-                      _buildPayOption(
-                        icon: Icons.chat_bubble,
-                        label: '微信支付',
-                        value: 0,
-                        isSelected: selectedPayMethod == 0,
-                        onTap: () => controller.selectPayMethod(0),
-                      ),
-                      SizedBox(width: ScreenAdapter.width(24)),
-                      _buildPayOption(
-                        icon: Icons.account_balance_wallet,
-                        label: '支付宝',
-                        value: 1,
-                        isSelected: selectedPayMethod == 1,
-                        onTap: () => controller.selectPayMethod(1),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: ScreenAdapter.height(40)),
-
-                  // 确认支付按钮
-                  SizedBox(
-                    width: double.infinity,
-                    height: ScreenAdapter.height(140),
-                    child: ElevatedButton(
-                      onPressed: selectedPayMethod != null
-                          ? () {
-                              Navigator.pop(context);
-                              _showConfirmDialog();
-                            }
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            ScreenAdapter.width(100),
-                          ),
-                        ),
-                        backgroundColor: selectedPayMethod != null
-                            ? null
-                            : const Color(0xFFCCCCCC),
-                        disabledBackgroundColor: const Color(0xFFCCCCCC),
-                      ).copyWith(
-                        backgroundColor:
-                            MaterialStateProperty.all(Colors.transparent),
-                      ),
-                      child: Ink(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(
-                            ScreenAdapter.width(100),
-                          ),
-                          gradient: selectedPayMethod != null
-                              ? const LinearGradient(colors: [
-                                  Color(0xFFF4D18C),
-                                  Color(0xFFE6B870)
-                                ])
-                              : null,
-                          color: selectedPayMethod == null
-                              ? const Color(0xFFCCCCCC)
-                              : null,
-                        ),
-                        child: Center(
-                          child: Text(
-                            '确认支付',
-                            style: TextStyle(
-                              fontSize: ScreenAdapter.fontSize(42),
-                              fontWeight: FontWeight.w500,
-                              color: selectedPayMethod != null
-                                  ? const Color(0xFF3D2B1F)
-                                  : Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: ScreenAdapter.height(20)),
-                ],
-              ),
-            ),
-          );
-        });
-      },
-    );
-  }
-
-  Widget _buildPayOption({
-    required IconData icon,
-    required String label,
-    required int value,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: ScreenAdapter.width(24),
-            vertical: ScreenAdapter.height(28),
-          ),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? const Color(0xFF07C160).withOpacity(0.06)
-                : const Color(0xFFF5F5F5),
-            borderRadius: BorderRadius.circular(ScreenAdapter.width(20)),
-            border: Border.all(
-              color: isSelected
-                  ? const Color(0xFF07C160)
-                  : const Color(0xFFE5E5E5),
-              width: isSelected ? 1.2 : 0.8,
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: ScreenAdapter.fontSize(48),
-                color: isSelected
-                    ? const Color(0xFF07C160)
-                    : const Color(0xFF666666),
-              ),
-              SizedBox(width: ScreenAdapter.width(12)),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(34),
-                  fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
-                  color: isSelected
-                      ? const Color(0xFF07C160)
-                      : const Color(0xFF666666),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  Widget _buildBottomPayBar() {
+    return _BottomPayBarWidget(controller: controller);
   }
 
   /// 确认支付弹窗 - 使用公共弹窗组件
@@ -905,45 +452,314 @@ class VipCenterView extends GetView<VipCenterController> {
   }
 }
 
-Widget _buildCommonButton({required String text, required VoidCallback onTap}) {
-  return SizedBox(
-    width: double.infinity,
-    height: ScreenAdapter.height(96),
-    child: ElevatedButton(
-      onPressed: onTap,
-      style: ElevatedButton.styleFrom(
-        padding: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(
-            ScreenAdapter.width(48),
+class _BottomPayBarWidget extends StatefulWidget {
+  final VipCenterController controller;
+
+  const _BottomPayBarWidget({required this.controller});
+
+  @override
+  State<_BottomPayBarWidget> createState() => _BottomPayBarWidgetState();
+}
+
+class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
+  bool isExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.controller.selectedPayMethod.value == null) {
+      widget.controller.selectPayMethod(0);
+    }
+  }
+
+  Widget _buildPayOption({
+    required String svgPath,
+    required String label,
+    required int value,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              SvgPicture.asset(
+                svgPath,
+                width: ScreenAdapter.width(44),
+                height: ScreenAdapter.height(44),
+              ),
+              SizedBox(width: ScreenAdapter.width(20)),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: ScreenAdapter.fontSize(38),
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF333333),
+                ),
+              ),
+            ],
           ),
-        ),
-      ).copyWith(
-        backgroundColor: MaterialStateProperty.all(Colors.transparent),
-        shadowColor: MaterialStateProperty.all(
-          const Color(0xFFE5C07B).withOpacity(0.4),
-        ),
+          Container(
+            width: ScreenAdapter.width(44),
+            height: ScreenAdapter.width(44),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected
+                    ? const Color(0xFF07C160)
+                    : const Color(0xFFCCCCCC),
+                width: 2,
+              ),
+              color: isSelected ? const Color(0xFF07C160) : Colors.white,
+            ),
+            child: isSelected
+                ? Icon(Icons.check,
+                    size: ScreenAdapter.fontSize(26), color: Colors.white)
+                : null,
+          ),
+        ],
       ),
-      child: Ink(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(
-            ScreenAdapter.width(48),
-          ),
-          gradient: const LinearGradient(
-            colors: [Color(0xFFF4D18C), Color(0xFFE6B870)],
-          ),
+    );
+  }
+
+  Widget _buildPaySelector() {
+    return Obx(() {
+      final selectedPayMethod = widget.controller.selectedPayMethod.value;
+      final isWechat = selectedPayMethod == 0;
+      return Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: ScreenAdapter.width(24),
+          vertical: ScreenAdapter.height(26),
         ),
-        child: Center(
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(34),
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFF3D2B1F),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F5F5),
+          borderRadius: BorderRadius.circular(ScreenAdapter.width(20)),
+        ),
+        child: Column(
+          children: [
+            GestureDetector(
+              onTap: () => setState(() => isExpanded = !isExpanded),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      SvgPicture.asset(
+                        isWechat
+                            ? 'assets/fonts/wechat.svg'
+                            : 'assets/fonts/zhifubao.svg',
+                        width: ScreenAdapter.width(44),
+                        height: ScreenAdapter.height(44),
+                      ),
+                      SizedBox(width: ScreenAdapter.width(16)),
+                      Text(
+                        isWechat ? '微信' : '支付宝',
+                        style: TextStyle(
+                          fontSize: ScreenAdapter.fontSize(38),
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF333333),
+                        ),
+                      ),
+                      if (isWechat) ...[
+                        SizedBox(width: ScreenAdapter.width(12)),
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: ScreenAdapter.width(14),
+                            vertical: ScreenAdapter.height(6),
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF07C160).withOpacity(0.1),
+                            borderRadius:
+                                BorderRadius.circular(ScreenAdapter.width(8)),
+                          ),
+                          child: Text(
+                            '推荐',
+                            style: TextStyle(
+                              fontSize: ScreenAdapter.fontSize(24),
+                              color: const Color(0xFF07C160),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Text(
+                        isExpanded ? '收起' : '更多支付方式',
+                        style: TextStyle(
+                            fontSize: ScreenAdapter.fontSize(32),
+                            color: const Color(0xFF999999)),
+                      ),
+                      SizedBox(width: ScreenAdapter.width(10)),
+                      Icon(
+                        isExpanded ? Icons.arrow_downward : Icons.arrow_upward,
+                        size: ScreenAdapter.fontSize(32),
+                        color: const Color(0xFF999999),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (isExpanded) ...[
+              SizedBox(height: ScreenAdapter.height(24)),
+              Divider(
+                  height: 1,
+                  color: const Color(0xFFE5E5E5),
+                  indent: ScreenAdapter.width(60)),
+              SizedBox(height: ScreenAdapter.height(24)),
+              _buildPayOption(
+                svgPath: 'assets/fonts/wechat.svg',
+                label: '微信',
+                value: 0,
+                isSelected: widget.controller.selectedPayMethod.value == 0,
+                onTap: () {
+                  widget.controller.selectPayMethod(0);
+                  setState(() => isExpanded = false);
+                },
+              ),
+              SizedBox(height: ScreenAdapter.height(24)),
+              Divider(
+                  height: 1,
+                  color: const Color(0xFFE5E5E5),
+                  indent: ScreenAdapter.width(60)),
+              SizedBox(height: ScreenAdapter.height(24)),
+              _buildPayOption(
+                svgPath: 'assets/fonts/zhifubao.svg',
+                label: '支付宝',
+                value: 1,
+                isSelected: widget.controller.selectedPayMethod.value == 1,
+                onTap: () {
+                  widget.controller.selectPayMethod(1);
+                  setState(() => isExpanded = false);
+                },
+              ),
+            ],
+          ],
+        ),
+      );
+    });
+  }
+
+  Widget _buildPriceSection() {
+    return Obx(() {
+      final configs = widget.controller.memberConfigs;
+      final selectedIndex = widget.controller.selectedIndex.value;
+      if (configs.isEmpty || selectedIndex >= configs.length) {
+        return const SizedBox.shrink();
+      }
+      final selected = configs[selectedIndex];
+      final price = selected['price']?.toString() ?? '';
+      final displayPrice = price.startsWith('￥') ? price : '￥$price';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.only(left: ScreenAdapter.width(20)),
+            child: Text(
+              displayPrice,
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(64),
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFE89A3C),
+              ),
+            ),
+          ),
+          SizedBox(height: ScreenAdapter.height(8)),
+          Padding(
+            padding: EdgeInsets.only(left: ScreenAdapter.width(20)),
+            child: Text(
+              '我已阅读并同意《服务协议》',
+              style: TextStyle(
+                  fontSize: ScreenAdapter.fontSize(34),
+                  color: const Color(0xFF999999)),
+            ),
+          ),
+        ],
+      );
+    });
+  }
+
+  Widget _buildPayButton() {
+    return SizedBox(
+      width: ScreenAdapter.width(360),
+      height: ScreenAdapter.height(110),
+      child: ElevatedButton(
+        onPressed: () => widget.controller.doPay(),
+        style: ElevatedButton.styleFrom(
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(ScreenAdapter.width(55))),
+        ).copyWith(
+          backgroundColor: MaterialStateProperty.all(Colors.transparent),
+          shadowColor: MaterialStateProperty.all(
+              const Color(0xFFE5C07B).withOpacity(0.4)),
+        ),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(ScreenAdapter.width(55)),
+            gradient: const LinearGradient(
+                colors: [Color(0xFFF4D18C), Color(0xFFE6B870)]),
+          ),
+          child: Center(
+            child: Text(
+              '立即开通',
+              style: TextStyle(
+                  fontSize: ScreenAdapter.fontSize(36),
+                  fontWeight: FontWeight.w600,
+                  color: const Color.fromARGB(255, 255, 255, 255)),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(
+          ScreenAdapter.width(30),
+          ScreenAdapter.height(30),
+          ScreenAdapter.width(30),
+          ScreenAdapter.height(40),
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(
+              top: Radius.circular(ScreenAdapter.width(30))),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.grey.withOpacity(0.15),
+                blurRadius: 20,
+                spreadRadius: 5,
+                offset: const Offset(0, -5))
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildPaySelector(),
+            SizedBox(height: ScreenAdapter.height(28)),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: _buildPriceSection()),
+                SizedBox(width: ScreenAdapter.width(24)),
+                _buildPayButton(),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

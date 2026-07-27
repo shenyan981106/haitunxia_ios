@@ -133,6 +133,14 @@ class QuestionsWrongController extends GetxController {
       final params = <String, dynamic>{};
       params['order'] = currentSortOrder.value == '最近错误在前' ? 'desc' : 'asc';
 
+      final args = Get.arguments as Map<String, dynamic>?;
+      final argSubjectId = args?['subject_id'];
+      if (argSubjectId != null) {
+        params['subject_id'] = argSubjectId;
+      } else {
+        params['subject_id'] = globalController.currentProject.value?.id;
+      }
+
       // 录入时间筛选
       if (currentSortTime.value != '不限') {
         params['days'] = currentSortTime.value.replaceAll('天', '');

@@ -4,8 +4,6 @@ import 'package:get/get.dart';
 import 'package:tobias/tobias.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../data/providers/api_client.dart';
-import '../../../data/services/auth_service.dart';
-import '../../../data/models/user_model.dart';
 import '../../../services/snackbar_utils.dart';
 import '../../../utils/api_error_handler.dart';
 
@@ -15,6 +13,8 @@ class VipCenterController extends GetxController {
   final RxList<Map<String, dynamic>> memberConfigs =
       <Map<String, dynamic>>[].obs;
   final RxBool isLoadingConfigs = true.obs;
+
+  final bool enablePayment = false; //屏蔽支付
 
   @override
   void onInit() {
@@ -65,42 +65,6 @@ class VipCenterController extends GetxController {
     selectedPayMethod.value = method;
   }
 
-  /// 兑换激活码
-  Future<void> exchangeActivationCode(String code) async {
-    try {
-      final response = await ApiClient.to
-          .post('addons/exam/pay/exchangeCode', data: {'code': code});
-      if (response.data is Map) {
-        final data = response.data as Map<String, dynamic>;
-        if (data['code'] == 1 && data['data'] is Map) {
-          final result = data['data'] as Map<String, dynamic>;
-          final infoMap = result['info'] is Map
-              ? Map<String, dynamic>.from(result['info'])
-              : null;
-          if (infoMap != null) {
-            final newInfo = UserInfoModel.fromJson(infoMap);
-            final currentUser = AuthService.to.user.value;
-            if (currentUser != null) {
-              AuthService.to.updateUser(currentUser.copyWith(info: newInfo));
-              AuthService.to.updateMemberStatus(newInfo.status ?? 0);
-            }
-          }
-          SnackbarUtils.showSuccess('兑换成功');
-        } else {
-          SnackbarUtils.showError(data['msg']?.toString() ?? '兑换失败');
-        }
-      } else {
-        SnackbarUtils.showError('兑换失败');
-      }
-    } on DioException catch (e) {
-      ApiErrorHandler.handleDioError(e, fallbackMessage: '兑换失败，请检查激活码是否正确');
-    } catch (e) {
-      ApiErrorHandler.handleError(e, fallbackMessage: '兑换失败');
-    }
-  }
-
-  /// 从后端响应中提取支付宝订单字符串
-  /// 支付宝 App 支付要求的订单字符串格式：
   /// partner="xxx"&seller_id="xxx"&out_trade_no="xxx"&subject="xxx"...
   String? _extractAlipayOrderString(dynamic body) {
     if (body is String && body.isNotEmpty) {
@@ -140,6 +104,10 @@ class VipCenterController extends GetxController {
 
   /// 发起支付（支付宝使用App支付，微信使用H5支付）
   Future<void> doPay() async {
+    if (!enablePayment) {
+      SnackbarUtils.showInfo('请联系客服');
+      return;
+    }
     final type = selectedPayMethod.value == 1 ? 'alipay' : 'wechat';
 
     if (memberConfigs.isEmpty || selectedIndex.value >= memberConfigs.length) {
