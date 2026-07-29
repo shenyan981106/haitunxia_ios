@@ -11,17 +11,16 @@ workflows:
         script: flutter pub get
       - name: Apply code signing profiles
         script: xcode-project use-profiles
-      - name: Build iOS IPA (no codesign)
+      - name: Build iOS archive (no codesign)
         script: |
           flutter build ipa \
             --release \
             --export-method app-store \
             --no-codesign
-      - name: Sign IPA with distribution certificate
+      - name: Export archive to IPA with distribution certificate
         script: |
-          cd build/ios/ipa
-          IPA_FILE=$(ls *.ipa | head -1)
-          echo "Unsigned IPA: $IPA_FILE"
+          ARCHIVE_PATH="$CM_BUILD_DIR/build/ios/archive/Runner.xcarchive"
+          echo "Archive: $ARCHIVE_PATH"
 
           # Find the distribution signing identity
           IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
@@ -30,22 +29,28 @@ workflows:
             | sed 's/.*"\(.*\)"/\1/')
           echo "Signing identity: $IDENTITY"
 
-          # Extract IPA
-          TMP_DIR=$(mktemp -d)
-          unzip -qo "$IPA_FILE" -d "$TMP_DIR"
+          # Create export options plist
+          EXPORT_PLIST="$CM_BUILD_DIR/exportOptions.plist"
+          /usr/libexec/PlistBuddy -c "Add :method string app-store" "$EXPORT_PLIST"
+          /usr/libexec/PlistBuddy -c "Add :signingStyle string manual" "$EXPORT_PLIST"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $(security find-identity -v -p codesigning | head -1 | grep -oE '[0-9A-Z]{10}')" "$EXPORT_PLIST"
+          /usr/libexec/PlistBuddy -c "Add :signingCertificate string $IDENTITY" "$EXPORT_PLIST"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles dict" "$EXPORT_PLIST"
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:app.haitunxia.com string AppStore" "$EXPORT_PLIST"
 
-          # Sign the .app inside the IPA
-          APP_PATH=$(ls -d "$TMP_DIR"/Payload/*.app | head -1)
-          echo "Signing: $APP_PATH"
-          codesign --force --sign "$IDENTITY" --timestamp=none "$APP_PATH"
+          echo "Export options plist:"
+          cat "$EXPORT_PLIST"
 
-          # Repack IPA
-          rm -f "$IPA_FILE"
-          cd "$TMP_DIR"
-          zip -r "$CM_BUILD_DIR/build/ios/ipa/$IPA_FILE" Payload
-          cd "$CM_BUILD_DIR"
-          rm -rf "$TMP_DIR"
+          # Export archive to IPA
+          IPA_PATH="$CM_BUILD_DIR/build/ios/ipa"
+          mkdir -p "$IPA_PATH"
+          xcodebuild \
+            -exportArchive "$ARCHIVE_PATH" \
+            -exportPath "$IPA_PATH" \
+            -exportOptionsPlist "$EXPORT_PLIST" \
+            -allowProvisioningUpdates
 
-          echo "Signed IPA created: $IPA_FILE"
+          echo "IPA exported successfully"
+          ls -la "$IPA_PATH"/*.ipa
     artifacts:
       - build/ios/ipa/*.ipa

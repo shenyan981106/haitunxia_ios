@@ -652,8 +652,8 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: b57dd8fad5500ecaaff595363f44ded19bcffd89
-      url: "https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git"
+      resolved-ref: "7776c367b437f0d2454ca08b81685c1661b64233"
+      url: "https://github.com/shenyan981106/fluttertpc_flutter_pdf_render.git"
     source: git
     version: "1.4.12"
   pdf_render_ohos:
@@ -661,8 +661,8 @@ packages:
     description:
       path: ohos
       ref: HEAD
-      resolved-ref: b57dd8fad5500ecaaff595363f44ded19bcffd89
-      url: "https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git"
+      resolved-ref: "7776c367b437f0d2454ca08b81685c1661b64233"
+      url: "https://github.com/shenyan981106/fluttertpc_flutter_pdf_render.git"
     source: git
     version: "1.0.0"
   petitparser:
