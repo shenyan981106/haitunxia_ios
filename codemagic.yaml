@@ -3,37 +3,49 @@ workflows:
     name: iOS Release
     environment:
       flutter: stable
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: app.haitunxia.com
     scripts:
       - name: Get Flutter dependencies
         script: flutter pub get
-
-      - name: Create export options
-        script: |
-          cat > export_options.plist <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>app-store</string>
-            <key>teamID</key>
-            <string>V2N3335468</string>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>stripSwiftSymbols</key>
-            <true/>
-            <key>uploadSymbols</key>
-            <true/>
-          </dict>
-          </plist>
-          EOF
-
-      - name: Build iOS IPA
+      - name: Apply code signing profiles
+        script: xcode-project use-profiles
+      - name: Build iOS IPA (no codesign)
         script: |
           flutter build ipa \
             --release \
-            --export-options-plist export_options.plist \
-            --verbose
+            --export-method app-store \
+            --no-codesign
+      - name: Sign IPA with distribution certificate
+        script: |
+          cd build/ios/ipa
+          IPA_FILE=$(ls *.ipa | head -1)
+          echo "Unsigned IPA: $IPA_FILE"
 
+          # Find the distribution signing identity
+          IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+            | grep "Apple Distribution" \
+            | head -1 \
+            | sed 's/.*"\(.*\)"/\1/')
+          echo "Signing identity: $IDENTITY"
+
+          # Extract IPA
+          TMP_DIR=$(mktemp -d)
+          unzip -qo "$IPA_FILE" -d "$TMP_DIR"
+
+          # Sign the .app inside the IPA
+          APP_PATH=$(ls -d "$TMP_DIR"/Payload/*.app | head -1)
+          echo "Signing: $APP_PATH"
+          codesign --force --sign "$IDENTITY" --timestamp=none "$APP_PATH"
+
+          # Repack IPA
+          rm -f "$IPA_FILE"
+          cd "$TMP_DIR"
+          zip -r "$CODEBUILD_BUILD_DIR/build/ios/ipa/$IPA_FILE" Payload
+          cd "$CODEBUILD_BUILD_DIR"
+          rm -rf "$TMP_DIR"
+
+          echo "Signed IPA created: $IPA_FILE"
     artifacts:
       - build/ios/ipa/*.ipa
