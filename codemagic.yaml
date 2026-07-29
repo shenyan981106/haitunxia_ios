@@ -42,8 +42,8 @@ workflows:
           # Repack IPA
           rm -f "$IPA_FILE"
           cd "$TMP_DIR"
-          zip -r "$CODEBUILD_BUILD_DIR/build/ios/ipa/$IPA_FILE" Payload
-          cd "$CODEBUILD_BUILD_DIR"
+          zip -r "$CM_BUILD_DIR/build/ios/ipa/$IPA_FILE" Payload
+          cd "$CM_BUILD_DIR"
           rm -rf "$TMP_DIR"
 
           echo "Signed IPA created: $IPA_FILE"
