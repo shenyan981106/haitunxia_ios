@@ -50,10 +50,12 @@ dependencies:
   # === PDF查看插件 ===
   pdf_render:
     git:
-      url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git
+      # url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git
+      url: https://github.com/shenyan981106/fluttertpc_flutter_pdf_render.git
   pdf_render_ohos:
     git:
-      url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git
+      # url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git
+      url: https://github.com/shenyan981106/fluttertpc_flutter_pdf_render.git
       path: ohos
 
   # === 支付宝支付插件 ===
