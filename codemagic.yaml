@@ -13,30 +13,53 @@ workflows:
         script: xcode-project use-profiles
       - name: Build archive (no codesign)
         script: flutter build ipa --release --no-codesign
-      - name: Export IPA with automatic signing
+      - name: Export IPA with manual signing
         script: |
           echo "=== Available identities ==="
           security find-identity -v -p codesigning 2>/dev/null
 
-          # Extract Team ID directly from the identity name
-          # Identity format: "iPhone Distribution: Company Name (TEAMID)"
+          # Extract signing identity (full name in quotes)
           IDENTITY_LINE=$(security find-identity -v -p codesigning 2>/dev/null \
-            | grep -E "Distribution|Development" \
+            | grep -E "Distribution" \
             | head -1)
-          echo "Identity line: $IDENTITY_LINE"
+          SIGNING_CERT=$(echo "$IDENTITY_LINE" \
+            | sed 's/.*"\(.*\)".*/\1/')
+          echo "Signing certificate: $SIGNING_CERT"
 
+          # Extract Team ID from identity name (last parenthesized group)
           TEAM_ID=$(echo "$IDENTITY_LINE" \
             | grep -oE '\([A-Z0-9]+\)' \
             | tr -d '()' \
-            | head -1)
-
-          if [ -z "$TEAM_ID" ]; then
-            echo "ERROR: Could not extract Team ID from identity name"
-            exit 1
-          fi
+            | tail -1)
           echo "Team ID: $TEAM_ID"
 
-          # Build export options plist
+          # Find installed provisioning profile for this bundle id
+          echo "=== Looking for provisioning profiles ==="
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          ls -la "$PROFILE_DIR"/*.mobileprovision 2>/dev/null
+
+          PROFILE_NAME=""
+          for PROFILE_FILE in "$PROFILE_DIR"/*.mobileprovision; do
+            # Extract bundle IDs from profile
+            PROFILE_BUNDLES=$(security cms -D -i "$PROFILE_FILE" 2>/dev/null \
+              | plutil -extract Entitlements.application-identifier raw -o - 2>/dev/null \
+              || true)
+            echo "Profile $PROFILE_FILE: $PROFILE_BUNDLES"
+
+            if echo "$PROFILE_BUNDLES" | grep -q "app.haitunxia.com"; then
+              PROFILE_NAME=$(security cms -D -i "$PROFILE_FILE" 2>/dev/null \
+                | plutil -extract Name raw -o - 2>/dev/null)
+              echo "Matched profile name: $PROFILE_NAME"
+              break
+            fi
+          done
+
+          if [ -z "$PROFILE_NAME" ]; then
+            echo "ERROR: No provisioning profile found for app.haitunxia.com"
+            exit 1
+          fi
+
+          # Build export options plist (manual signing)
           EXPORT_PLIST="$CM_BUILD_DIR/exportOptions.plist"
           cat > "$EXPORT_PLIST" << EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -46,9 +69,16 @@ workflows:
             <key>method</key>
             <string>app-store</string>
             <key>signingStyle</key>
-            <string>automatic</string>
+            <string>manual</string>
             <key>teamID</key>
             <string>$TEAM_ID</string>
+            <key>signingCertificate</key>
+            <string>$SIGNING_CERT</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>app.haitunxia.com</key>
+              <string>$PROFILE_NAME</string>
+            </dict>
           </dict>
           </plist>
           EOF
@@ -61,8 +91,7 @@ workflows:
             -exportArchive \
             -archivePath "$CM_BUILD_DIR/build/ios/archive/Runner.xcarchive" \
             -exportPath "$CM_BUILD_DIR/build/ios/ipa" \
-            -exportOptionsPlist "$EXPORT_PLIST" \
-            -allowProvisioningUpdates
+            -exportOptionsPlist "$EXPORT_PLIST"
 
           echo "=== IPA export result ==="
           ls -la "$CM_BUILD_DIR/build/ios/ipa/"*.ipa 2>/dev/null || echo "No IPA found"
