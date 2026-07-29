@@ -40,15 +40,19 @@ workflows:
 
           PROFILE_NAME=""
           for PROFILE_FILE in "$PROFILE_DIR"/*.mobileprovision; do
-            # Extract bundle IDs from profile
-            PROFILE_BUNDLES=$(security cms -D -i "$PROFILE_FILE" 2>/dev/null \
-              | plutil -extract Entitlements.application-identifier raw -o - 2>/dev/null \
-              || true)
-            echo "Profile $PROFILE_FILE: $PROFILE_BUNDLES"
+            # Decode mobileprovision to a temp plist file
+            TEMP_PLIST=$(mktemp)
+            security cms -D -i "$PROFILE_FILE" > "$TEMP_PLIST" 2>/dev/null
 
-            if echo "$PROFILE_BUNDLES" | grep -q "app.haitunxia.com"; then
-              PROFILE_NAME=$(security cms -D -i "$PROFILE_FILE" 2>/dev/null \
-                | plutil -extract Name raw -o - 2>/dev/null)
+            # Extract app-identifier and profile name using PlistBuddy
+            APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$TEMP_PLIST" 2>/dev/null || echo "")
+            CUR_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$TEMP_PLIST" 2>/dev/null || echo "")
+            echo "Profile: name=$CUR_NAME, app-id=$APP_ID"
+
+            rm -f "$TEMP_PLIST"
+
+            if echo "$APP_ID" | grep -q "app.haitunxia.com"; then
+              PROFILE_NAME="$CUR_NAME"
               echo "Matched profile name: $PROFILE_NAME"
               break
             fi
