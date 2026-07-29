@@ -58,6 +58,7 @@ workflows:
 
           # Export archive to IPA
           xcodebuild \
+            -exportArchive \
             -archivePath "$CM_BUILD_DIR/build/ios/archive/Runner.xcarchive" \
             -exportPath "$CM_BUILD_DIR/build/ios/ipa" \
             -exportOptionsPlist "$EXPORT_PLIST" \
