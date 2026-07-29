@@ -114,7 +114,19 @@ workflows:
         script: flutter pub get
       - name: Apply code signing profiles
         script: xcode-project use-profiles
-      - name: Build iOS IPA
-        script: flutter build ipa --release --export-method development
+      - name: Build archive (no codesign)
+        script: flutter build ipa --release --no-codesign
+      - name: Export IPA
+        script: |
+          echo "Using export options from: $HOME/export_options.plist"
+          cat "$HOME/export_options.plist"
+
+          xcodebuild -exportArchive \
+            -archivePath "$CM_BUILD_DIR/build/ios/archive/Runner.xcarchive" \
+            -exportPath "$CM_BUILD_DIR/build/ios/ipa" \
+            -exportOptionsPlist "$HOME/export_options.plist"
+
+          echo "=== IPA export result ==="
+          ls -la "$CM_BUILD_DIR/build/ios/ipa/"*.ipa 2>/dev/null || echo "No IPA found"
     artifacts:
       - build/ios/ipa/*.ipa
