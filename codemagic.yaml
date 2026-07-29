@@ -13,3 +13,9 @@ workflows:
             --export-method app-store
     artifacts:
       - build/ios/ipa/*.ipa
+    ios:
+      code_signing:
+        certificates:
+          - haitunxia_cert
+        profiles:
+          - haitunxia_profile
