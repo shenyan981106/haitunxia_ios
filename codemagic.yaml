@@ -101,3 +101,20 @@ workflows:
           ls -la "$CM_BUILD_DIR/build/ios/ipa/"*.ipa 2>/dev/null || echo "No IPA found"
     artifacts:
       - build/ios/ipa/*.ipa
+
+  ios-dev:
+    name: iOS Development
+    environment:
+      flutter: stable
+      ios_signing:
+        distribution_type: development
+        bundle_identifier: app.haitunxia.com
+    scripts:
+      - name: Get Flutter dependencies
+        script: flutter pub get
+      - name: Apply code signing profiles
+        script: xcode-project use-profiles
+      - name: Build iOS IPA
+        script: flutter build ipa --release --export-method development
+    artifacts:
+      - build/ios/ipa/*.ipa
