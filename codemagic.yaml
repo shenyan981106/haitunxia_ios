@@ -11,7 +11,59 @@ workflows:
         script: flutter pub get
       - name: Apply code signing profiles
         script: xcode-project use-profiles
-      - name: Build iOS IPA
-        script: flutter build ipa --release
+      - name: Build archive (no codesign)
+        script: flutter build ipa --release --no-codesign
+      - name: Export IPA with automatic signing
+        script: |
+          echo "=== Available identities ==="
+          security find-identity -v -p codesigning 2>/dev/null
+
+          echo "=== Available certs ==="
+          security find-certificate -a -c "Apple Distribution" -Z -p 2>/dev/null | head -5
+
+          # Extract Team ID from Distribution cert
+          TEAM_ID=$(security find-certificate -c "Apple Distribution" -p 2>/dev/null \
+            | openssl x509 -noout -subject 2>/dev/null \
+            | grep -oE 'OU = [A-Z0-9]{10}' \
+            | sed 's/OU = //' | head -1)
+
+          if [ -z "$TEAM_ID" ]; then
+            echo "ERROR: Could not extract Team ID"
+            echo "Subject output:"
+            security find-certificate -c "Apple Distribution" -p 2>/dev/null \
+              | openssl x509 -noout -subject 2>/dev/null
+            exit 1
+          fi
+          echo "Team ID: $TEAM_ID"
+
+          # Build export options plist
+          EXPORT_PLIST="$CM_BUILD_DIR/exportOptions.plist"
+          cat > "$EXPORT_PLIST" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>teamID</key>
+            <string>$TEAM_ID</string>
+          </dict>
+          </plist>
+          EOF
+
+          echo "Export options:"
+          cat "$EXPORT_PLIST"
+
+          # Export archive to IPA
+          xcodebuild \
+            -archivePath "$CM_BUILD_DIR/build/ios/archive/Runner.xcarchive" \
+            -exportPath "$CM_BUILD_DIR/build/ios/ipa" \
+            -exportOptionsPlist "$EXPORT_PLIST" \
+            -allowProvisioningUpdates
+
+          echo "=== IPA export result ==="
+          ls -la "$CM_BUILD_DIR/build/ios/ipa/"*.ipa 2>/dev/null || echo "No IPA found"
     artifacts:
       - build/ios/ipa/*.ipa
