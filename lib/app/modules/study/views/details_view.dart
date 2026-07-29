@@ -8,10 +8,12 @@ import 'package:pdf_render/pdf_render_widgets.dart';
 import 'package:get/get.dart';
 import 'package:superplayer_widget/demo_superplayer_lib.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import '../../../services/screenAdapter.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../data/services/auth_service.dart';
-import '../../../routes/app_pages.dart';
+// TODO: 支付对接完成后恢复导入
+// import '../../../routes/app_pages.dart';
 import '../../../components/common_dialog.dart';
 import '../controllers/details_controller.dart';
 import '../../../services/snackbar_utils.dart';
@@ -657,7 +659,9 @@ class DetailsView extends GetView<DetailsController> {
                         }
                         return;
                       }
-                      Get.toNamed(Routes.ORDER_CONFIRM, arguments: detail);
+                      // TODO: 支付对接完成后恢复跳转下单页
+// Get.toNamed(Routes.ORDER_CONFIRM, arguments: detail);
+                      SnackbarUtils.showInfo('请联系客服');
                     },
               child: Transform.translate(
                 offset:
@@ -986,39 +990,9 @@ class DetailsView extends GetView<DetailsController> {
         detail['intro']?.toString() ??
         detail['content']?.toString() ??
         '';
-    final String courseType = detail['category_name']?.toString() ??
-        detail['cate_name']?.toString() ??
-        detail['type_name']?.toString() ??
-        '未分类';
-    final int difficulty =
-        int.tryParse(detail['difficulty']?.toString() ?? '0') ?? 0;
     final bool isFree = detail['is_free']?.toString() == '1';
     final String price = isFree ? '免费' : '${detail['price']}';
     final String originalPrice = detail['original_price']?.toString() ?? '';
-    final int totalLessons =
-        int.tryParse(detail['total_lessons']?.toString() ?? '0') ?? 0;
-    final int students =
-        int.tryParse(detail['total_students']?.toString() ?? '0') ?? 0;
-
-    // 难度文字映射
-    String difficultyText;
-    switch (difficulty) {
-      case 1:
-        difficultyText = '入门';
-        break;
-      case 2:
-        difficultyText = '初级';
-        break;
-      case 3:
-        difficultyText = '中级';
-        break;
-      case 4:
-        difficultyText = '高级';
-        break;
-      default:
-        difficultyText = '中级';
-        break;
-    }
 
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
@@ -1041,35 +1015,88 @@ class DetailsView extends GetView<DetailsController> {
 
           SizedBox(height: ScreenAdapter.height(16)),
 
-          // 副标题/描述
-          if (description.isNotEmpty)
+          // 价格展示（红色字体）
+          if (isFree)
             Text(
-              description,
+              price,
               style: TextStyle(
-                fontSize: ScreenAdapter.fontSize(30),
-                color: Color(0xFF999999),
+                fontSize: ScreenAdapter.fontSize(36),
+                fontWeight: FontWeight.w500,
+                color: Color(0xFFFF4D4F),
+              ),
+            )
+          else
+            Row(
+              children: [
+                Text(
+                  '¥$price',
+                  style: TextStyle(
+                    fontSize: ScreenAdapter.fontSize(48),
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFFF4D4F),
+                  ),
+                ),
+                if (originalPrice.isNotEmpty)
+                  Padding(
+                    padding: EdgeInsets.only(left: ScreenAdapter.width(16)),
+                    child: Text(
+                      '¥$originalPrice',
+                      style: TextStyle(
+                        fontSize: ScreenAdapter.fontSize(28),
+                        color: Color(0xFF999999),
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
+          // 分隔横线
+          if (description.isNotEmpty)
+            Container(
+              height: 1,
+              color: Color(0xFFEEEEEE),
+              margin: EdgeInsets.symmetric(vertical: ScreenAdapter.height(24)),
+            ),
+
+          // 课程说明标题（左侧竖线装饰）
+          if (description.isNotEmpty)
+            Container(
+              margin: EdgeInsets.only(bottom: ScreenAdapter.height(16)),
+              child: Row(
+                children: [
+                  Container(
+                    width: ScreenAdapter.width(6),
+                    height: ScreenAdapter.height(40),
+                    decoration: BoxDecoration(
+                      color: Color(0xFF3D7CFF),
+                      borderRadius:
+                          BorderRadius.circular(ScreenAdapter.width(3)),
+                    ),
+                  ),
+                  SizedBox(width: ScreenAdapter.width(16)),
+                  Text(
+                    '课程说明',
+                    style: TextStyle(
+                      fontSize: ScreenAdapter.fontSize(44),
+                      color: Color(0xFF333333),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
 
-          SizedBox(height: ScreenAdapter.height(32)),
-
-          // 信息卡片
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: Color(0xFFFAFAFA),
-              borderRadius: BorderRadius.circular(ScreenAdapter.width(16)),
+          // 描述（富文本展示）
+          if (description.isNotEmpty)
+            HtmlWidget(
+              description,
+              textStyle: TextStyle(
+                fontSize: ScreenAdapter.fontSize(30),
+                color: Color(0xFF666666),
+                height: 1.5,
+              ),
             ),
-            child: Column(
-              children: [
-                _infoRow('课程类型', courseType, showDivider: true),
-                _infoRow('难度', difficultyText, showDivider: true),
-                _infoRow('总课时', '$totalLessons', showDivider: true),
-                _infoRow('学员', students > 0 ? '$students' : '--',
-                    showDivider: false),
-              ],
-            ),
-          ),
         ],
       ),
     );

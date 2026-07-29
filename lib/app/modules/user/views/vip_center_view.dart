@@ -669,16 +669,6 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
               ),
             ),
           ),
-          SizedBox(height: ScreenAdapter.height(8)),
-          Padding(
-            padding: EdgeInsets.only(left: ScreenAdapter.width(20)),
-            child: Text(
-              '我已阅读并同意《服务协议》',
-              style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(34),
-                  color: const Color(0xFF999999)),
-            ),
-          ),
         ],
       );
     });

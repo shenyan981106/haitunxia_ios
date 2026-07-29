@@ -53,8 +53,8 @@ void main() async {
 
   // ==================== 确定初始路由 ====================
 
-  // 根据登录状态决定初始路由（由全局控制器管理）
-  final String initialRoute = GlobalProjectController.getInitialRoute();
+  // 始终从启动页开始，由启动页判断是否显示协议弹窗和后续跳转
+  final String initialRoute = AppPages.INITIAL;
 
   // ==================== 启动应用 ====================
 
