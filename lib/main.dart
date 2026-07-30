@@ -60,40 +60,41 @@ void main() async {
   // ==================== 启动应用 ====================
 
   runApp(
-    ScreenUtilInit(
-      designSize: const Size(1080, 2400), // 设计稿尺寸
-      minTextAdapt: true,
-      splitScreenMode: true,
-      builder: (context, child) {
-        return GetMaterialApp(
-          debugShowCheckedModeBanner: false,
-          title: '海豚侠',
-          initialRoute: initialRoute,
-          getPages: AppPages.routes,
-          builder: (context, child) {
-            final smartDialogBuilder = FlutterSmartDialog.init();
-            return smartDialogBuilder(
-              context,
-              CenterTheWidgets(child: child ?? const SizedBox.shrink()),
-            );
-          },
-          // 开启日志（开发环境）
-          enableLog: true,
-          logWriterCallback: (text, {bool isError = false}) {
-            debugPrint('[GetX] $text');
-          },
-          localizationsDelegates: [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-            SuperPlayerWidgetLocals.delegate,
-          ],
-          supportedLocales: [
-            const Locale('zh', 'CN'),
-            const Locale('en', 'US'),
-          ],
-        );
-      },
+    CenterTheWidgets(
+      child: ScreenUtilInit(
+        designSize: const Size(1080, 2400),
+        minTextAdapt: true,
+        splitScreenMode: true,
+        builder: (context, child) {
+          return GetMaterialApp(
+            debugShowCheckedModeBanner: false,
+            title: '海豚侠',
+            initialRoute: initialRoute,
+            getPages: AppPages.routes,
+            builder: (context, child) {
+              final smartDialogBuilder = FlutterSmartDialog.init();
+              return smartDialogBuilder(
+                context,
+                child ?? const SizedBox.shrink(),
+              );
+            },
+            enableLog: true,
+            logWriterCallback: (text, {bool isError = false}) {
+              debugPrint('[GetX] $text');
+            },
+            localizationsDelegates: [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+              SuperPlayerWidgetLocals.delegate,
+            ],
+            supportedLocales: [
+              const Locale('zh', 'CN'),
+              const Locale('en', 'US'),
+            ],
+          );
+        },
+      ),
     ),
   );
 }

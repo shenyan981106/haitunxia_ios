@@ -14,7 +14,7 @@ class VipCenterController extends GetxController {
       <Map<String, dynamic>>[].obs;
   final RxBool isLoadingConfigs = true.obs;
 
-  final bool enablePayment = false; //屏蔽支付
+  final bool enablePayment = true; //屏蔽支付
 
   @override
   void onInit() {

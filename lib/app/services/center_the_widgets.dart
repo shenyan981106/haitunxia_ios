@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 /// 在 iPad 等大屏设备上将内容居中显示，两侧填充黑色背景
-/// 保持手机端的宽高比（默认 9:20），等比例缩放内容
+/// 横屏时按手机宽高比（默认 9:20）等比缩放
+/// 竖屏时仅约束最大宽度，高度自适应
 class CenterTheWidgets extends StatelessWidget {
   final Widget child;
   final double maxWidth;
@@ -40,12 +41,7 @@ class CenterTheWidgets extends StatelessWidget {
       }
     } else {
       contentWidth = maxWidth;
-      contentHeight = contentWidth / aspectRatio;
-
-      if (contentHeight > size.height) {
-        contentHeight = size.height;
-        contentWidth = contentHeight * aspectRatio;
-      }
+      contentHeight = size.height;
     }
 
     final constrainedSize = Size(contentWidth, contentHeight);
@@ -59,6 +55,9 @@ class CenterTheWidgets extends StatelessWidget {
           child: MediaQuery(
             data: mediaQuery.copyWith(
               size: constrainedSize,
+              padding: EdgeInsets.zero,
+              viewPadding: EdgeInsets.zero,
+              viewInsets: EdgeInsets.zero,
             ),
             child: ClipRect(
               child: child,
