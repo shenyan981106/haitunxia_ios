@@ -1,4 +1,6 @@
 // home_controller.dart
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -23,6 +25,48 @@ class HomeController extends GetxController {
   String _currentVersion = '1.0.0';
   bool _versionChecked = false;
   final Rx<VersionModel?> pendingUpdate = Rx<VersionModel?>(null);
+
+  /// 当前平台 (android/ios/ohos)
+  String get currentPlatform {
+    if (Platform.isAndroid) return 'android';
+    if (Platform.isIOS) return 'ios';
+    if (Platform.operatingSystem == 'ohos') return 'ohos';
+    return 'unknown';
+  }
+
+  /// 根据当前平台获取对应的更新地址
+  String? getUpdateUrl(VersionModel model) {
+    switch (currentPlatform) {
+      case 'ios':
+        return model.iosUrl;
+      case 'ohos':
+        return model.ohosUrl;
+      case 'android':
+      default:
+        return model.downloadUrl;
+    }
+  }
+
+  /// 当前平台是否可以执行更新操作
+  bool canUpdate(VersionModel model) {
+    final url = getUpdateUrl(model);
+    return url != null && url.isNotEmpty;
+  }
+
+  /// 当前平台更新按钮文案
+  String updateButtonText(VersionModel model) {
+    if (!canUpdate(model)) {
+      switch (currentPlatform) {
+        case 'ios':
+          return 'iOS版审核中';
+        case 'ohos':
+          return '鸿蒙版审核中';
+        default:
+          return '敬请期待';
+      }
+    }
+    return '立即更新';
+  }
 
   // ever 监听器引用，用于在 onClose 中释放
   Worker? _projectChangeWorker;

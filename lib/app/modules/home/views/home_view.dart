@@ -67,6 +67,10 @@ class _HomeViewState extends State<HomeView> {
 
   /// 显示版本更新弹窗
   void _showUpdateDialog(VersionModel model) {
+    final canUpdate = controller.canUpdate(model);
+    final updateUrl = controller.getUpdateUrl(model);
+    final buttonText = controller.updateButtonText(model);
+
     Get.dialog(
       PopScope(
         canPop: !model.enforce,
@@ -111,13 +115,23 @@ class _HomeViewState extends State<HomeView> {
                                 color: const Color(0xFF666666),
                               ),
                             ),
-                          if (model.packageSize != null) ...[
+                          if (canUpdate && model.packageSize != null) ...[
                             SizedBox(height: 10.h),
                             Text(
                               '新版本大小${model.packageSize}',
                               style: TextStyle(
                                 fontSize: 30.sp,
                                 color: const Color(0xFF666666),
+                              ),
+                            ),
+                          ],
+                          if (!canUpdate) ...[
+                            SizedBox(height: 10.h),
+                            Text(
+                              '新版本正在审核中，敬请期待',
+                              style: TextStyle(
+                                fontSize: 28.sp,
+                                color: const Color(0xFFE89A3C),
                               ),
                             ),
                           ],
@@ -224,24 +238,28 @@ class _HomeViewState extends State<HomeView> {
                             ),
                           ),
                           SizedBox(width: 24.w),
-                          // 立即更新
+                          // 立即更新 / 审核中
                           Expanded(
                             child: GestureDetector(
-                              onTap: () {
-                                debugPrint(
-                                    'Update button tapped, downloadUrl: ${model.downloadUrl}');
-                                controller.downloadUpdate(model.downloadUrl);
-                              },
+                              onTap: canUpdate
+                                  ? () {
+                                      debugPrint(
+                                          'Update button tapped, url: $updateUrl');
+                                      controller.downloadUpdate(updateUrl);
+                                    }
+                                  : null,
                               behavior: HitTestBehavior.opaque,
                               child: Container(
                                 height: 88.h,
                                 alignment: Alignment.center,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF4A6CF7),
+                                  color: canUpdate
+                                      ? const Color(0xFF4A6CF7)
+                                      : const Color(0xFFCCCCCC),
                                   borderRadius: BorderRadius.circular(44.r),
                                 ),
                                 child: Text(
-                                  '立即更新',
+                                  buttonText,
                                   style: TextStyle(
                                     fontSize: 30.sp,
                                     color: Colors.white,
@@ -259,20 +277,24 @@ class _HomeViewState extends State<HomeView> {
                         width: double.infinity,
                         height: 88.h,
                         child: GestureDetector(
-                          onTap: () {
-                            debugPrint(
-                                'Force update button tapped, downloadUrl: ${model.downloadUrl}');
-                            controller.downloadUpdate(model.downloadUrl);
-                          },
+                          onTap: canUpdate
+                              ? () {
+                                  debugPrint(
+                                      'Force update button tapped, url: $updateUrl');
+                                  controller.downloadUpdate(updateUrl);
+                                }
+                              : null,
                           behavior: HitTestBehavior.opaque,
                           child: Container(
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF4A6CF7),
+                              color: canUpdate
+                                  ? const Color(0xFF4A6CF7)
+                                  : const Color(0xFFCCCCCC),
                               borderRadius: BorderRadius.circular(44.r),
                             ),
                             child: Text(
-                              '立即更新',
+                              buttonText,
                               style: TextStyle(
                                 fontSize: 30.sp,
                                 color: Colors.white,
