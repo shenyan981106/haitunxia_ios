@@ -12,6 +12,7 @@ import 'app/data/providers/api_client.dart';
 import 'app/data/services/auth_service.dart';
 import 'app/data/repositories/repository_provider.dart';
 import 'app/services/global_project_controller.dart';
+import 'app/services/center_the_widgets.dart';
 import 'app/routes/app_pages.dart';
 
 void main() async {
@@ -69,7 +70,13 @@ void main() async {
           title: '海豚侠',
           initialRoute: initialRoute,
           getPages: AppPages.routes,
-          builder: FlutterSmartDialog.init(),
+          builder: (context, child) {
+            final smartDialogBuilder = FlutterSmartDialog.init();
+            return smartDialogBuilder(
+              context,
+              CenterTheWidgets(child: child ?? const SizedBox.shrink()),
+            );
+          },
           // 开启日志（开发环境）
           enableLog: true,
           logWriterCallback: (text, {bool isError = false}) {
