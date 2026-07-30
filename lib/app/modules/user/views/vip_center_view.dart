@@ -22,17 +22,21 @@ class VipCenterView extends GetView<VipCenterController> {
               children: [
                 _buildHeader(),
                 Expanded(
-                  child: ListView(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: ScreenAdapter.width(30),
-                      vertical: ScreenAdapter.height(20),
-                    ),
-                    children: [
-                      _buildPlansSection(),
-                      SizedBox(height: ScreenAdapter.height(40)),
-                      SizedBox(height: ScreenAdapter.height(180)),
-                    ],
-                  ),
+                  child: Obx(() {
+                    final isMember = AuthService.to.isMember;
+                    return ListView(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ScreenAdapter.width(30),
+                        vertical: ScreenAdapter.height(20),
+                      ),
+                      children: [
+                        _buildPlansSection(),
+                        SizedBox(height: ScreenAdapter.height(40)),
+                        if (!isMember)
+                          SizedBox(height: ScreenAdapter.height(180)),
+                      ],
+                    );
+                  }),
                 ),
               ],
             ),
@@ -211,9 +215,7 @@ class VipCenterView extends GetView<VipCenterController> {
                         ),
                         SizedBox(height: ScreenAdapter.height(10)),
                         Text(
-                          memberStatus == 1
-                              ? '您已是VIP会员'
-                              : '升级会员享额外特权',
+                          memberStatus == 1 ? '您已是VIP会员' : '升级会员享额外特权',
                           style: TextStyle(
                             fontSize: ScreenAdapter.fontSize(30),
                             color: Colors.white.withOpacity(0.82),
@@ -245,6 +247,9 @@ class VipCenterView extends GetView<VipCenterController> {
 
   Widget _buildPlansSection() {
     return Obx(() {
+      if (AuthService.to.isMember) {
+        return _buildMemberBenefitsCard();
+      }
       final configs = controller.memberConfigs;
       final List<Widget> cards = [];
       final int count = configs.length < 3 ? configs.length : 3;
@@ -297,6 +302,98 @@ class VipCenterView extends GetView<VipCenterController> {
         ],
       );
     });
+  }
+
+  Widget _buildMemberBenefitsCard() {
+    final expireText = AuthService.to.memberExpireTimeText ?? '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: ScreenAdapter.height(20)),
+        Text(
+          '会员权益',
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(43),
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF333333),
+          ),
+        ),
+        SizedBox(height: ScreenAdapter.height(40)),
+        Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: ScreenAdapter.width(30),
+            vertical: ScreenAdapter.height(40),
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(
+              ScreenAdapter.width(24),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.verified,
+                    color: const Color(0xFFE89A3C),
+                    size: ScreenAdapter.width(48),
+                  ),
+                  SizedBox(width: ScreenAdapter.width(16)),
+                  Expanded(
+                    child: Text(
+                      '您已是VIP会员，享全部特权',
+                      style: TextStyle(
+                        fontSize: ScreenAdapter.fontSize(36),
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF333333),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: ScreenAdapter.height(24)),
+              Text(
+                '有效期至 $expireText',
+                style: TextStyle(
+                  fontSize: ScreenAdapter.fontSize(30),
+                  color: const Color(0xFF999999),
+                ),
+              ),
+              SizedBox(height: ScreenAdapter.height(24)),
+              _buildBenefitItem(Icons.book, '海量题库免费练习'),
+              _buildBenefitItem(Icons.assignment_turned_in, '智能批改与解析'),
+              _buildBenefitItem(Icons.emoji_events, '专属学习报告'),
+              _buildBenefitItem(Icons.support_agent, '优先客服响应'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBenefitItem(IconData icon, String text) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(16)),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: ScreenAdapter.width(40),
+            color: const Color(0xFFE89A3C),
+          ),
+          SizedBox(width: ScreenAdapter.width(20)),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: ScreenAdapter.fontSize(30),
+              color: const Color(0xFF666666),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildPlanItemFromConfig(Map<String, dynamic> config,
@@ -414,7 +511,12 @@ class VipCenterView extends GetView<VipCenterController> {
   }
 
   Widget _buildBottomPayBar() {
-    return _BottomPayBarWidget(controller: controller);
+    return Obx(() {
+      if (AuthService.to.isMember) {
+        return const SizedBox.shrink();
+      }
+      return _BottomPayBarWidget(controller: controller);
+    });
   }
 
   /// 确认支付弹窗 - 使用公共弹窗组件
