@@ -62,7 +62,7 @@ class AuthService extends GetxService {
         // token 会自动同步到 ApiClient（通过拦截器）
 
         // 启动后立即获取最新用户信息（包含VIP状态）
-        _fetchUserInfo();
+        fetchUserInfo();
       } else {
         _clearState();
       }
@@ -74,7 +74,7 @@ class AuthService extends GetxService {
 
   /// 获取用户详情（包含最新VIP信息）
   /// 接口: /addons/exam/user/info
-  Future<void> _fetchUserInfo() async {
+  Future<void> fetchUserInfo() async {
     try {
       final response = await ApiClient.to.post('addons/exam/user/info');
       if (response.statusCode == 200) {

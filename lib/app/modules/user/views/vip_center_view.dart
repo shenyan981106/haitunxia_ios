@@ -127,128 +127,120 @@ class VipCenterView extends GetView<VipCenterController> {
   }
 
   Widget _buildVipInfoCard() {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF27324A), Color(0xFF1F2638)],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        borderRadius: BorderRadius.circular(
-          ScreenAdapter.width(34),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.35),
-            blurRadius: 50,
-            spreadRadius: 2,
-            offset: Offset(0, ScreenAdapter.height(30)),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            right: ScreenAdapter.width(36),
-            bottom: ScreenAdapter.height(26),
-            child: Icon(
-              Icons.emoji_events,
-              size: ScreenAdapter.width(360),
-              color: Colors.white.withOpacity(0.08),
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: ScreenAdapter.width(40),
-              vertical: ScreenAdapter.height(36),
-            ),
-            child: _buildVipInfoContent(),
-          ),
-        ],
-      ),
-    );
-  }
+    return Obx(() {
+      final info = AuthService.to.user.value?.toJson();
+      final isLoggedIn = AuthService.to.isLoggedIn.value;
+      final displayName = isLoggedIn
+          ? (info?['nickname']?.toString() ??
+              info?['username']?.toString() ??
+              '未登录用户')
+          : '未登录用户';
+      final avatar = info?['avatar']?.toString() ?? '';
+      final hasAvatar = avatar.isNotEmpty;
+      final relativePath = hasAvatar
+          ? avatar
+          : 'uploads/20260221/d058aab5aa43767fd921131ae4a9a88e.png';
+      final url = ApiClient.getFullImageUrl(relativePath);
+      final radius = ScreenAdapter.width(70);
+      final memberStatus = AuthService.to.memberStatus.value;
 
-  Widget _buildVipInfoContent() {
-    final info = AuthService.to.user.value?.toJson();
-    final isLoggedIn = AuthService.to.isLoggedIn.value;
-    final displayName = isLoggedIn
-        ? (info?['nickname']?.toString() ??
-            info?['username']?.toString() ??
-            '未登录用户')
-        : '未登录用户';
-    final avatar = info?['avatar']?.toString() ?? '';
-    final hasAvatar = avatar.isNotEmpty;
-    final relativePath = hasAvatar
-        ? avatar
-        : 'uploads/20260221/d058aab5aa43767fd921131ae4a9a88e.png';
-    final url = ApiClient.getFullImageUrl(relativePath);
-    final radius = ScreenAdapter.width(70);
-
-    return Row(
-      children: [
-        Container(
-          padding: EdgeInsets.all(ScreenAdapter.width(3)),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFF1B2140),
+      return Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF27324A), Color(0xFF1F2638)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
           ),
-          child: CircleAvatar(
-            radius: radius,
-            backgroundColor: Colors.white,
-            backgroundImage: NetworkImage(url),
+          borderRadius: BorderRadius.circular(
+            ScreenAdapter.width(34),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.35),
+              blurRadius: 50,
+              spreadRadius: 2,
+              offset: Offset(0, ScreenAdapter.height(30)),
+            ),
+          ],
         ),
-        SizedBox(width: ScreenAdapter.width(28)),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                displayName,
-                style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(50),
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white,
-                ),
+        child: Stack(
+          children: [
+            Positioned(
+              right: ScreenAdapter.width(36),
+              bottom: ScreenAdapter.height(26),
+              child: Icon(
+                Icons.emoji_events,
+                size: ScreenAdapter.width(360),
+                color: Colors.white.withOpacity(0.08),
               ),
-              SizedBox(height: ScreenAdapter.height(10)),
-              Text(
-                '升级会员享额外特权',
-                style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(30),
-                  color: Colors.white.withOpacity(0.82),
-                ),
+            ),
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: ScreenAdapter.width(40),
+                vertical: ScreenAdapter.height(36),
               ),
-              if (_isMember())
-                Padding(
-                  padding: EdgeInsets.only(top: ScreenAdapter.height(8)),
-                  child: Text(
-                    '有效期至 ${_getExpireTimeText()}',
-                    style: TextStyle(
-                      fontSize: ScreenAdapter.fontSize(26),
-                      color: Colors.white.withOpacity(0.6),
+              child: Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(ScreenAdapter.width(3)),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF1B2140),
+                    ),
+                    child: CircleAvatar(
+                      radius: radius,
+                      backgroundColor: Colors.white,
+                      backgroundImage: NetworkImage(url),
                     ),
                   ),
-                ),
-            ],
-          ),
+                  SizedBox(width: ScreenAdapter.width(28)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          displayName,
+                          style: TextStyle(
+                            fontSize: ScreenAdapter.fontSize(50),
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(height: ScreenAdapter.height(10)),
+                        Text(
+                          memberStatus == 1
+                              ? '您已是VIP会员'
+                              : '升级会员享额外特权',
+                          style: TextStyle(
+                            fontSize: ScreenAdapter.fontSize(30),
+                            color: Colors.white.withOpacity(0.82),
+                          ),
+                        ),
+                        if (memberStatus == 1)
+                          Padding(
+                            padding:
+                                EdgeInsets.only(top: ScreenAdapter.height(8)),
+                            child: Text(
+                              '有效期至 ${AuthService.to.memberExpireTimeText ?? ''}',
+                              style: TextStyle(
+                                fontSize: ScreenAdapter.fontSize(26),
+                                color: Colors.white.withOpacity(0.6),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-      ],
-    );
-  }
-
-  bool _isMember() {
-    final info = AuthService.to.user.value?.info;
-    return info?.status == 1;
-  }
-
-  String _getExpireTimeText() {
-    final info = AuthService.to.user.value?.info;
-    return info?.expireTimeText ?? '';
+      );
+    });
   }
 
   Widget _buildPlansSection() {
