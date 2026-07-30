@@ -28,20 +28,17 @@ class CenterTheWidgets extends StatelessWidget {
       return child;
     }
 
-    double contentWidth;
-    double contentHeight;
+    double contentWidth = maxWidth;
+    double contentHeight = contentWidth / aspectRatio;
 
-    if (size.width > size.height) {
+    if (contentHeight > size.height) {
       contentHeight = size.height;
       contentWidth = contentHeight * aspectRatio;
+    }
 
-      if (contentWidth > maxWidth) {
-        contentWidth = maxWidth;
-        contentHeight = contentWidth / aspectRatio;
-      }
-    } else {
-      contentWidth = maxWidth;
-      contentHeight = size.height;
+    if (contentWidth > size.width) {
+      contentWidth = size.width;
+      contentHeight = contentWidth / aspectRatio;
     }
 
     final constrainedSize = Size(contentWidth, contentHeight);
