@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 /// 在 iPad 等大屏设备上将内容居中显示，两侧填充黑色背景
-/// 横屏时按手机宽高比（默认 9:20）等比缩放
-/// 竖屏时仅约束最大宽度，高度自适应
+/// 通过 ScreenUtil.configure 手动注入约束尺寸，确保 .w/.h/.sp 基于手机比例计算
 class CenterTheWidgets extends StatelessWidget {
   final Widget child;
   final double maxWidth;
@@ -12,7 +12,7 @@ class CenterTheWidgets extends StatelessWidget {
   const CenterTheWidgets({
     super.key,
     required this.child,
-    this.maxWidth = 600,
+    this.maxWidth = 414,
     this.backgroundColor = Colors.black,
     this.aspectRatio = 1080 / 2400,
   });
@@ -45,6 +45,19 @@ class CenterTheWidgets extends StatelessWidget {
     }
 
     final constrainedSize = Size(contentWidth, contentHeight);
+    final constrainedData = mediaQuery.copyWith(
+      size: constrainedSize,
+      padding: EdgeInsets.zero,
+      viewPadding: EdgeInsets.zero,
+      viewInsets: EdgeInsets.zero,
+    );
+
+    ScreenUtil.configure(
+      data: constrainedData,
+      designSize: const Size(1080, 2400),
+      splitScreenMode: true,
+      minTextAdapt: true,
+    );
 
     return Container(
       color: backgroundColor,
@@ -53,12 +66,7 @@ class CenterTheWidgets extends StatelessWidget {
           width: contentWidth,
           height: contentHeight,
           child: MediaQuery(
-            data: mediaQuery.copyWith(
-              size: constrainedSize,
-              padding: EdgeInsets.zero,
-              viewPadding: EdgeInsets.zero,
-              viewInsets: EdgeInsets.zero,
-            ),
+            data: constrainedData,
             child: ClipRect(
               child: child,
             ),
