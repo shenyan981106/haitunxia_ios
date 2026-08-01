@@ -257,7 +257,7 @@ class _SearchViewState extends State<SearchView> {
 
   Widget _buildQuestionCard(SearchQuestion question) {
     return GestureDetector(
-      onTap: () => controller.goToQuestionDetail(question.id, question.content),
+      onTap: () => controller.goToQuestionDetail(question),
       child: Container(
         padding: EdgeInsets.all(32.w),
         decoration: BoxDecoration(

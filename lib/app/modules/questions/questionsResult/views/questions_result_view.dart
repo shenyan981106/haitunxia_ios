@@ -89,16 +89,18 @@ class QuestionsResultView extends GetView<QuestionsResultController> {
               ),
             ),
           ),
-          GestureDetector(
-            onTap: () {
-              // TODO: 分享功能
-            },
-            child: Icon(
-              Icons.share_outlined,
-              size: 48.sp,
-              color: const Color(0xFF333333),
-            ),
-          ),
+          // 与左侧返回按钮等宽，保持标题居中
+          SizedBox(width: 56.sp),
+          // GestureDetector(
+          //   onTap: () {
+          //     // TODO: 分享功能
+          //   },
+          //   child: Icon(
+          //     Icons.share_outlined,
+          //     size: 48.sp,
+          //     color: const Color(0xFF333333),
+          //   ),
+          // ),
         ],
       ),
     );

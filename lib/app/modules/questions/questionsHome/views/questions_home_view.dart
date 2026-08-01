@@ -671,14 +671,14 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
         'route': '/question-feedback',
         'arguments': {},
       },
-      {
-        'title': '快问老师',
-        'desc': '老师在线答疑',
-        'icon': 'e60d',
-        'color': const Color(0xFF13C2C2),
-        'route': '/questions/ask',
-        'arguments': {},
-      },
+      // {
+      //   'title': '快问老师',
+      //   'desc': '老师在线答疑',
+      //   'icon': 'e60d',
+      //   'color': const Color(0xFF13C2C2),
+      //   'route': '/questions/ask',
+      //   'arguments': {},
+      // },
     ];
 
     return Obx(() {

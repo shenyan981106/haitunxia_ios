@@ -420,9 +420,9 @@ class QuestionsWrongController extends GetxController {
     );
   }
 
-  /// 点击某个分组，跳转做题页面与收藏页逻辑一致
-  void onTapGroup(WrongGroup group) {
-    Get.toNamed('/question-train', arguments: {
+  /// 点击某个分组，跳转做题页面，返回后刷新列表
+  Future<void> onTapGroup(WrongGroup group) async {
+    await Get.toNamed('/question-train', arguments: {
       'pageType': 'wrong',
       'cate_name': group.cateName,
       'total': group.count,
@@ -440,5 +440,6 @@ class QuestionsWrongController extends GetxController {
               })
           .toList(),
     });
+    _loadWrongQuestions();
   }
 }

@@ -15,6 +15,8 @@ class SearchQuestion {
   final String? explanation;
   final String? difficulty;
   final String? categoryName;
+  // 保留接口返回的原始数据，用于跳转答题页时直接展示
+  final Map<String, dynamic> rawJson;
 
   SearchQuestion({
     required this.id,
@@ -25,6 +27,7 @@ class SearchQuestion {
     this.explanation,
     this.difficulty,
     this.categoryName,
+    this.rawJson = const {},
   });
 
   factory SearchQuestion.fromJson(Map<String, dynamic> json) {
@@ -94,6 +97,7 @@ class SearchQuestion {
           json['explain']?.toString() ?? json['explanation']?.toString(),
       difficulty: difficultyText,
       categoryName: categoryName,
+      rawJson: json,
     );
   }
 }
@@ -181,20 +185,28 @@ class QuestionSearchController extends GetxController {
     searchError.value = '';
   }
 
-  void goToQuestionDetail(String questionId, String questionTitle) {
+  /// 点击搜索结果，跳转到答题页面
+  /// 直接把搜索接口返回的题目原始数据带给答题页（与收藏模式思路一致），
+  /// 避免依赖 cate_id/paper_id，复用已有答题流程。
+  void goToQuestionDetail(SearchQuestion question) {
     try {
       Get.delete<QuestionTrainController>(force: true);
     } catch (e) {
       print('Failed to delete QuestionTrainController: $e');
     }
 
+    final String title =
+        (question.categoryName != null && question.categoryName!.isNotEmpty)
+            ? question.categoryName!
+            : '题目搜索';
+
     Get.toNamed(
       Routes.QUESTION_TRAIN,
-      parameters: {'question_id': questionId},
       preventDuplicates: false,
       arguments: {
-        'question_id': questionId,
-        'title': questionTitle,
+        'pageType': 'search',
+        'title': title,
+        'items': <Map<String, dynamic>>[question.rawJson],
         '_ts': DateTime.now().millisecondsSinceEpoch,
       },
     );

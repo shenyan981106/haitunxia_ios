@@ -528,8 +528,15 @@ class VipCenterView extends GetView<VipCenterController> {
       priceInfo = '${selected["title"] ?? ""} - ${selected["price"] ?? ""}';
     }
 
-    final content =
-        '即将使用${controller.selectedPayMethod.value == 0 ? "微信" : "支付宝"}支付\n$priceInfo';
+    final payMethods = controller.payMethods;
+    final selectedCode = controller.selectedPayCode.value;
+    final selectedMethod = payMethods.firstWhere(
+      (m) => m['code']?.toString() == selectedCode,
+      orElse: () => <String, dynamic>{'name': '默认'},
+    );
+    final payName = selectedMethod['name']?.toString() ?? '默认支付';
+
+    final content = '即将使用$payName支付\n$priceInfo';
 
     final confirmed = await CommonDialog.show(
       title: '确认开通',
@@ -561,68 +568,88 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
   @override
   void initState() {
     super.initState();
-    if (widget.controller.selectedPayMethod.value == null) {
-      widget.controller.selectPayMethod(0);
-    }
   }
 
   Widget _buildPayOption({
     required String svgPath,
     required String label,
-    required int value,
+    required String code,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
+    final double circleSize = ScreenAdapter.width(52);
+    final double checkSize = ScreenAdapter.fontSize(30);
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              SvgPicture.asset(
-                svgPath,
-                width: ScreenAdapter.width(44),
-                height: ScreenAdapter.height(44),
-              ),
-              SizedBox(width: ScreenAdapter.width(20)),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(38),
-                  fontWeight: FontWeight.w500,
-                  color: const Color(0xFF333333),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          vertical: ScreenAdapter.height(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                SvgPicture.asset(
+                  svgPath,
+                  width: ScreenAdapter.width(44),
+                  height: ScreenAdapter.height(44),
                 ),
-              ),
-            ],
-          ),
-          Container(
-            width: ScreenAdapter.width(44),
-            height: ScreenAdapter.width(44),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isSelected
-                    ? const Color(0xFF07C160)
-                    : const Color(0xFFCCCCCC),
-                width: 2,
-              ),
-              color: isSelected ? const Color(0xFF07C160) : Colors.white,
+                SizedBox(width: ScreenAdapter.width(20)),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: ScreenAdapter.fontSize(38),
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF333333),
+                  ),
+                ),
+              ],
             ),
-            child: isSelected
-                ? Icon(Icons.check,
-                    size: ScreenAdapter.fontSize(26), color: Colors.white)
-                : null,
-          ),
-        ],
+            Container(
+              width: circleSize,
+              height: circleSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected
+                      ? const Color(0xFF07C160)
+                      : const Color(0xFFCCCCCC),
+                  width: 2,
+                ),
+                color: isSelected ? const Color(0xFF07C160) : Colors.white,
+              ),
+              child: isSelected
+                  ? Icon(Icons.check, size: checkSize, color: Colors.white)
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildPaySelector() {
     return Obx(() {
-      final selectedPayMethod = widget.controller.selectedPayMethod.value;
-      final isWechat = selectedPayMethod == 0;
+      final payMethods =
+          widget.controller.payMethods.where((m) => m['status'] == 1).toList();
+      final selectedCode = widget.controller.selectedPayCode.value;
+
+      if (payMethods.isEmpty) {
+        return const SizedBox.shrink();
+      }
+
+      final currentMethod = payMethods.firstWhere(
+        (m) => m['code']?.toString() == selectedCode,
+        orElse: () => payMethods.first,
+      );
+
+      final currentCode = currentMethod['code']?.toString() ?? '';
+      final currentName = currentMethod['name']?.toString() ?? '';
+      final currentSvg = _getSvgForCode(currentCode);
+      final isWechat = currentCode == 'wechat';
+
       return Container(
         padding: EdgeInsets.symmetric(
           horizontal: ScreenAdapter.width(24),
@@ -642,15 +669,13 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
                   Row(
                     children: [
                       SvgPicture.asset(
-                        isWechat
-                            ? 'assets/fonts/wechat.svg'
-                            : 'assets/fonts/zhifubao.svg',
+                        currentSvg,
                         width: ScreenAdapter.width(44),
                         height: ScreenAdapter.height(44),
                       ),
                       SizedBox(width: ScreenAdapter.width(16)),
                       Text(
-                        isWechat ? '微信' : '支付宝',
+                        currentName,
                         style: TextStyle(
                           fontSize: ScreenAdapter.fontSize(38),
                           fontWeight: FontWeight.w500,
@@ -706,37 +731,53 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
                   color: const Color(0xFFE5E5E5),
                   indent: ScreenAdapter.width(60)),
               SizedBox(height: ScreenAdapter.height(24)),
-              _buildPayOption(
-                svgPath: 'assets/fonts/wechat.svg',
-                label: '微信',
-                value: 0,
-                isSelected: widget.controller.selectedPayMethod.value == 0,
-                onTap: () {
-                  widget.controller.selectPayMethod(0);
-                  setState(() => isExpanded = false);
-                },
-              ),
-              SizedBox(height: ScreenAdapter.height(24)),
-              Divider(
-                  height: 1,
-                  color: const Color(0xFFE5E5E5),
-                  indent: ScreenAdapter.width(60)),
-              SizedBox(height: ScreenAdapter.height(24)),
-              _buildPayOption(
-                svgPath: 'assets/fonts/zhifubao.svg',
-                label: '支付宝',
-                value: 1,
-                isSelected: widget.controller.selectedPayMethod.value == 1,
-                onTap: () {
-                  widget.controller.selectPayMethod(1);
-                  setState(() => isExpanded = false);
-                },
-              ),
+              ...payMethods.asMap().entries.map((entry) {
+                final index = entry.key;
+                final method = entry.value;
+                final code = method['code']?.toString() ?? '';
+                final name = method['name']?.toString() ?? '';
+                final svg = _getSvgForCode(code);
+                final isSelected = selectedCode == code;
+                final isLast = index == payMethods.length - 1;
+                return Column(
+                  children: [
+                    if (index > 0) ...[
+                      Divider(
+                          height: 1,
+                          color: const Color(0xFFE5E5E5),
+                          indent: ScreenAdapter.width(60)),
+                      SizedBox(height: ScreenAdapter.height(24)),
+                    ],
+                    _buildPayOption(
+                      svgPath: svg,
+                      label: name,
+                      code: code,
+                      isSelected: isSelected,
+                      onTap: () {
+                        widget.controller.selectPayMethod(code);
+                        setState(() => isExpanded = false);
+                      },
+                    ),
+                    if (isLast) SizedBox(height: ScreenAdapter.height(16)),
+                  ],
+                );
+              }),
             ],
           ],
         ),
       );
     });
+  }
+
+  String _getSvgForCode(String code) {
+    switch (code) {
+      case 'wechat':
+        return 'assets/fonts/wechat.svg';
+      case 'alipay':
+        return 'assets/fonts/zhifubao.svg';
+      default:
+        return 'assets/fonts/wechat.svg';
+    }
   }
 
   Widget _buildPriceSection() {

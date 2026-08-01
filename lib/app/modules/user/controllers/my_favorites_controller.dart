@@ -203,9 +203,9 @@ class MyFavoritesController extends GetxController {
     _loadFavorites();
   }
 
-  /// 点击某个分组 - 跳转做题页面
-  void onTapGroup(FavoriteGroup group) {
-    Get.toNamed('/question-train', arguments: {
+  /// 点击某个分组 - 跳转做题页面，返回后刷新列表
+  Future<void> onTapGroup(FavoriteGroup group) async {
+    await Get.toNamed('/question-train', arguments: {
       'pageType': 'favorite',
       'cate_name': group.cateName,
       'total': group.count,
@@ -222,5 +222,6 @@ class MyFavoritesController extends GetxController {
               })
           .toList(),
     });
+    _loadFavorites();
   }
 }

@@ -32,6 +32,8 @@ class DetailsController extends GetxController {
   bool _isHandlingCompletion = false;
   bool _isPlayerInitialized = false;
   bool _isVideoActuallyPlayed = false;
+  bool _isLoadingVideo = false;
+  Timer? _videoLoadingTimer;
 
   @override
   void onInit() {
@@ -91,9 +93,12 @@ class DetailsController extends GetxController {
       } else if (evtName == SuperPlayerViewEvent.onSuperPlayerDidStart) {
         _isVideoActuallyPlayed = true;
         isVideoPlaying.value = true;
+        _dismissVideoLoading();
       } else if (evtName == SuperPlayerViewEvent.onSuperPlayerProgress) {
         _isVideoActuallyPlayed = true;
+        _dismissVideoLoading();
       } else if (evtName == SuperPlayerViewEvent.onSuperPlayerError) {
+        _dismissVideoLoading();
         SnackbarUtils.showError('视频播放出错');
         _isVideoActuallyPlayed = false;
       } else if (evtName == SuperPlayerViewEvent.onSuperPlayerDidEnd) {
@@ -156,6 +161,9 @@ class DetailsController extends GetxController {
   }
 
   void playCourseItem(dynamic item) {
+    // 视频加载中时忽略重复点击，避免大视频重复触发加载导致无法播放
+    if (_isLoadingVideo) return;
+
     final bool isPay = courseDetail['is_pay']?.toString() == '1' ||
         courseDetail['is_pay'] == true;
     final bool isFree = courseDetail['is_free']?.toString() == '1';
@@ -186,6 +194,7 @@ class DetailsController extends GetxController {
     _playStartTime = DateTime.now();
 
     if (videoUrl != null && videoUrl.isNotEmpty) {
+      _showVideoLoading();
       playVideoWithSuperPlayer(videoUrl, title, initialPosition);
     } else {
       SnackbarUtils.showInfo('该课程暂无视频 $title');
@@ -194,7 +203,10 @@ class DetailsController extends GetxController {
 
   void playVideoWithSuperPlayer(String url, String title,
       [int initialPosition = 0]) {
-    if (superPlayerController == null) return;
+    if (superPlayerController == null) {
+      _dismissVideoLoading();
+      return;
+    }
 
     _isVideoActuallyPlayed = false;
     currentVideoUrl.value = url;
@@ -211,6 +223,29 @@ class DetailsController extends GetxController {
     model.isEnableDownload = false;
 
     superPlayerController!.playWithModelNeedLicence(model);
+  }
+
+  /// 显示视频加载弹窗，并启动超时兜底，避免大视频卡在加载态
+  void _showVideoLoading() {
+    _isLoadingVideo = true;
+    SnackbarUtils.showLoading(msg: '视频加载中..');
+    _videoLoadingTimer?.cancel();
+    _videoLoadingTimer = Timer(const Duration(seconds: 15), () {
+      if (_isLoadingVideo) {
+        _isLoadingVideo = false;
+        SnackbarUtils.dismissLoading();
+        SnackbarUtils.showError('视频加载超时，请稍后重试');
+      }
+    });
+  }
+
+  /// 关闭视频加载弹窗（已关闭则忽略，可安全多次调用）
+  void _dismissVideoLoading() {
+    if (!_isLoadingVideo) return;
+    _isLoadingVideo = false;
+    _videoLoadingTimer?.cancel();
+    _videoLoadingTimer = null;
+    SnackbarUtils.dismissLoading();
   }
 
   Future<void> _handleVideoCompleted() async {
@@ -309,6 +344,12 @@ class DetailsController extends GetxController {
 
   @override
   void onClose() {
+    _videoLoadingTimer?.cancel();
+    _videoLoadingTimer = null;
+    if (_isLoadingVideo) {
+      _isLoadingVideo = false;
+      SnackbarUtils.dismissLoading();
+    }
     _saveCurrentProgress();
     _playerEventSubscription?.cancel();
     superPlayerController?.releasePlayer();

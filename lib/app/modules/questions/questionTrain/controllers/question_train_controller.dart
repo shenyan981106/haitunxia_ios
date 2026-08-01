@@ -511,6 +511,13 @@ class QuestionTrainController extends GetxController {
         return;
       }
 
+      // 搜索模式：直接从传入的 items（搜索接口返回的原始题目）构建题目
+      if (pageType == 'search') {
+        print('🔍 搜索模式：从 args.items 加载题目');
+        await _loadQuestionsFromSearch();
+        return;
+      }
+
       // 页面配置模式：通过 pageConfigId 获取题目
       if (pageType == 'page_config' && pageConfigId != null) {
         print('🔧 页面配置模式：通过 pageConfigId=$pageConfigId 获取题目');
@@ -1116,6 +1123,138 @@ class QuestionTrainController extends GetxController {
       print('_loadQuestionsFromWrong 错误: $e');
       print('堆栈: $stackTrace');
       errorMessage.value = '加载错题失败: $e';
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  // ====== 从搜索结果加载题目（搜索模式）======
+  // items 为搜索接口返回的原始题目数据，复用收藏/错题模式的解析思路
+  Future<void> _loadQuestionsFromSearch() async {
+    print('🔍 ===== _loadQuestionsFromSearch 开始 =====');
+    print('🔍 pageType=$pageType, pageMode=${pageMode.value}');
+
+    try {
+      final dynamic args = Get.arguments;
+      if (args is! Map) {
+        print('args 不是 Map: ${args.runtimeType}');
+        errorMessage.value = '搜索参数异常';
+        return;
+      }
+
+      final itemsRaw = args['items'];
+      print(
+          '🔍 itemsRaw 类型: ${itemsRaw.runtimeType}, 数量: ${itemsRaw is List ? itemsRaw.length : "N/A"}');
+
+      if (itemsRaw is! List || itemsRaw.isEmpty) {
+        print('items 为空或不是列表');
+        errorMessage.value = '暂无题目数据';
+        return;
+      }
+
+      print('🔍 搜索题目数量: ${itemsRaw.length}');
+      final parsedQuestions = <Question>[];
+      int parseSuccessCount = 0;
+
+      for (int idx = 0; idx < itemsRaw.length; idx++) {
+        final item = itemsRaw[idx];
+        if (item is! Map) continue;
+
+        final itemMap = Map<String, dynamic>.from(item);
+
+        // ====== 提取基本字段 ======
+        final questionId = itemMap['id']?.toString() ??
+            itemMap['question_id']?.toString() ??
+            '';
+
+        String title = itemMap['title']?.toString() ??
+            itemMap['content']?.toString() ??
+            '';
+
+        // kind 优先取代码字段，其次 kind_text
+        String kind = (itemMap['kind']?.toString() ??
+                itemMap['kind_text']?.toString() ??
+                'SINGLE')
+            .toUpperCase();
+        if (kind.isEmpty) kind = 'SINGLE';
+
+        String answer = itemMap['answer']?.toString() ?? '';
+
+        // 选项（兼容 options_json / options_img）
+        final rawOptionsJson = itemMap['options_json'];
+        final rawOptionsImg = itemMap['options_img'];
+
+        print(
+            '🔍 题[$idx]: id=$questionId, kind=$kind, answer=$answer, optType=${rawOptionsJson?.runtimeType}');
+
+        // ====== 解析选项 ======
+        List<String> options =
+            _parseOptionsWithImages(rawOptionsJson, rawOptionsImg, kind);
+        print('🔍 题[$idx] 最终选项(${options.length}): $options');
+
+        // ====== 计算正确答案索引 ======
+        final correctAnswers = _parseAnswerToIndices(answer, options);
+        print('🔍 题[$idx] correctAnswers: $correctAnswers');
+
+        // ====== 映射 kind 到 type 字段字符串 ======
+        String type = 'single';
+        if (kind.contains('MULTI') || kind == 'X') {
+          type = 'multi';
+        } else if (kind.contains('JUDGE') ||
+            kind == 'TRUE_FALSE' ||
+            kind == 'TF') {
+          type = 'judgment';
+        }
+
+        // 解析难度
+        String difficulty = 'medium';
+        final diffRaw = itemMap['difficulty']?.toString() ?? '';
+        if (diffRaw == 'EASY' || diffRaw == 'easy') {
+          difficulty = 'easy';
+        } else if (diffRaw == 'HARD' || diffRaw == 'hard') {
+          difficulty = 'hard';
+        }
+
+        parsedQuestions.add(Question(
+          id: questionId,
+          projectId: '',
+          subjectId: itemMap['subject_id']?.toString() ?? '',
+          type: type,
+          kind: kind,
+          content: title,
+          options: options,
+          correctAnswers: correctAnswers,
+          answer: answer.isNotEmpty ? answer : null,
+          explanation: itemMap['explain']?.toString() ??
+              itemMap['explanation']?.toString() ??
+              '',
+          difficulty: difficulty,
+          chapterId: '',
+          isCollected: itemMap['collected'] == true ||
+              itemMap['collected'] == 1 ||
+              itemMap['is_collected'] == true,
+          cateId: itemMap['cate_id']?.toString() ?? '',
+        ));
+        parseSuccessCount++;
+      }
+
+      print('🔍 ===== 解析完成: 成功=$parseSuccessCount/${itemsRaw.length} =====');
+
+      if (parsedQuestions.isEmpty) {
+        errorMessage.value = '题目数据解析失败';
+      } else {
+        questions.assignAll(parsedQuestions);
+        _initFavoriteStatus();
+        // 跳转到第一个未做过的题
+        _jumpToFirstUndoneQuestion();
+        // 搜索模式：确保计时器运行
+        _ensureTimerRunning();
+        print('🔍 ===== 搜索题目加载完成: ${parsedQuestions.length} =====');
+      }
+    } catch (e, stackTrace) {
+      print('_loadQuestionsFromSearch 错误: $e');
+      print('堆栈: $stackTrace');
+      errorMessage.value = '加载搜索题目失败: $e';
     } finally {
       isLoading.value = false;
     }

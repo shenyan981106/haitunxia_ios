@@ -438,9 +438,9 @@ class QuestionsFavoriteController extends GetxController {
     Get.snackbar('提示', '导出成功', snackPosition: SnackPosition.BOTTOM);
   }
 
-  /// 点击某个分组 - 跳转做题页面，传入该分组的题目列表
-  void onTapGroup(FavoriteGroup group) {
-    Get.toNamed('/question-train', arguments: {
+  /// 点击某个分组 - 跳转做题页面，返回后刷新列表
+  Future<void> onTapGroup(FavoriteGroup group) async {
+    await Get.toNamed('/question-train', arguments: {
       'pageType': 'favorite',
       'cate_name': group.cateName,
       'total': group.count,
@@ -457,5 +457,6 @@ class QuestionsFavoriteController extends GetxController {
               })
           .toList(),
     });
+    _loadFavorites();
   }
 }

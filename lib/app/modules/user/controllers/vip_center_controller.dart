@@ -11,7 +11,8 @@ import '../../../utils/api_error_handler.dart';
 
 class VipCenterController extends GetxController with WidgetsBindingObserver {
   final RxInt selectedIndex = 0.obs;
-  final RxnInt selectedPayMethod = RxnInt(); // 0: 微信, 1: 支付宝
+  final RxnString selectedPayCode = RxnString();
+  final RxList<Map<String, dynamic>> payMethods = <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> memberConfigs =
       <Map<String, dynamic>>[].obs;
   final RxBool isLoadingConfigs = true.obs;
@@ -24,6 +25,7 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     super.onInit();
     WidgetsBinding.instance.addObserver(this);
     _fetchMemberConfigs();
+    _fetchPayMethods();
   }
 
   @override
@@ -80,14 +82,50 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     }
   }
 
+  /// 获取支付方式列表
+  Future<void> _fetchPayMethods() async {
+    try {
+      final response = await ApiClient.to.get('addons/exam/pay/payMethod');
+      final body = response.data;
+      dynamic rawList;
+
+      if (body is Map && body['data'] is List) {
+        rawList = body['data'];
+      } else if (body is Map &&
+          body['data'] is Map &&
+          (body['data']['list'] is List)) {
+        rawList = body['data']['list'];
+      } else if (body is List) {
+        rawList = body;
+      }
+
+      if (rawList is List) {
+        payMethods.value = rawList
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+
+        final enabledMethods =
+            payMethods.where((m) => m['status'] == 1).toList();
+        if (enabledMethods.isNotEmpty) {
+          selectPayMethod(enabledMethods.first['code']?.toString() ?? '');
+        }
+      }
+    } on DioException catch (e) {
+      ApiErrorHandler.handleDioError(e, fallbackMessage: '获取支付方式失败');
+    } catch (e) {
+      ApiErrorHandler.handleError(e, fallbackMessage: '获取支付方式失败');
+    }
+  }
+
   /// 选择套餐
   void selectPlan(int index) {
     selectedIndex.value = index;
   }
 
   /// 选择支付方式
-  void selectPayMethod(int method) {
-    selectedPayMethod.value = method;
+  void selectPayMethod(String code) {
+    selectedPayCode.value = code;
   }
 
   /// partner="xxx"&seller_id="xxx"&out_trade_no="xxx"&subject="xxx"...
@@ -133,7 +171,7 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
       SnackbarUtils.showInfo('请联系客服');
       return;
     }
-    final type = selectedPayMethod.value == 1 ? 'alipay' : 'wechat';
+    final type = selectedPayCode.value ?? 'wechat';
 
     if (memberConfigs.isEmpty || selectedIndex.value >= memberConfigs.length) {
       SnackbarUtils.showError('请选择会员类型');

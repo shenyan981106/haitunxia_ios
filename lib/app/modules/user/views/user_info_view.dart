@@ -190,6 +190,7 @@ class UserInfoView extends GetView<UserController> {
         child: Column(
           children: [
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: _pickAndUploadAvatar,
               child: Container(
                 width: ScreenAdapter.width(200),
@@ -215,6 +216,7 @@ class UserInfoView extends GetView<UserController> {
             ),
             SizedBox(height: ScreenAdapter.height(16)),
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: _pickAndUploadAvatar,
               child: Container(
                 width: ScreenAdapter.width(72),
