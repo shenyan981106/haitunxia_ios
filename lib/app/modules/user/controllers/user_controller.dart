@@ -181,7 +181,6 @@ class UserController extends GetxController {
           await ApiClient.to.uploadFile<Map<String, dynamic>>(image.path);
       final uploadData = uploadResponse.data;
       if (uploadData == null || uploadData['code'] != 1) {
-        SnackbarUtils.dismissLoading();
         SnackbarUtils.showError('图片上传失败');
         return false;
       }
@@ -192,20 +191,17 @@ class UserController extends GetxController {
           ? (dataMap['fullurl']?.toString() ?? dataMap['url']?.toString() ?? '')
           : '';
       if (newAvatarUrl.isEmpty) {
-        SnackbarUtils.dismissLoading();
         SnackbarUtils.showError('图片上传失败：未获取到图片地址');
         return false;
-
-        // 第二步：保存用户头像到服务器
       }
 
+      // 第二步：保存用户头像到服务器
       final response = await ApiClient.to.post(
         'addons/exam/user/save',
         data: {'avatar': newAvatarUrl},
       );
 
       if (response.statusCode == 200) {
-        SnackbarUtils.dismissLoading();
         final body = response.data;
         Map<String, dynamic>? inner;
         if (body is Map && body['data'] is Map) {
@@ -233,13 +229,14 @@ class UserController extends GetxController {
         return false;
       }
     } on DioException catch (e) {
-      SnackbarUtils.dismissLoading();
       ApiErrorHandler.handleDioError(e, fallbackMessage: '上传失败');
       return false;
     } catch (e) {
-      SnackbarUtils.dismissLoading();
       ApiErrorHandler.handleError(e, fallbackMessage: '上传失败');
       return false;
+    } finally {
+      // 统一在 finally 关闭 loading，杜绝任何分支遗漏导致遮罩残留
+      SnackbarUtils.dismissLoading();
     }
   }
 }

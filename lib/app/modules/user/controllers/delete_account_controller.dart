@@ -60,18 +60,18 @@ class DeleteAccountController extends GetxController {
         },
       );
 
-      SnackbarUtils.dismissLoading();
-
       final data = response.data;
       if (data is Map && data['code'] == 1) {
         SnackbarUtils.showSuccess('注销请求提交成功，请等待审核');
       } else {
         final msg = data is Map ? data['msg'] : '提交失败';
-        SnackbarUtils.showError(msg?.toString() ?? '注销请求提交失败');
+        SnackbarUtils.showError(msg?.toString() ?? '提交注销请求失败');
       }
     } catch (e) {
-      SnackbarUtils.dismissLoading();
       SnackbarUtils.showError('提交失败：${e}');
+    } finally {
+      // 统一在 finally 关闭 loading，杜绝任何分支遗漏导致遮罩残留
+      SnackbarUtils.dismissLoading();
     }
   }
 }
