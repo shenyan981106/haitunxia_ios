@@ -1,10 +1,7 @@
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import '../../../data/repositories/exam_repository.dart';
-import '../../../data/models/api_response.dart';
 import '../../../services/global_project_controller.dart';
-import '../../../routes/app_pages.dart';
-import '../../questions/questionTrain/controllers/question_train_controller.dart';
 
 class SearchQuestion {
   final String id;
@@ -189,19 +186,16 @@ class QuestionSearchController extends GetxController {
   /// 直接把搜索接口返回的题目原始数据带给答题页（与收藏模式思路一致），
   /// 避免依赖 cate_id/paper_id，复用已有答题流程。
   void goToQuestionDetail(SearchQuestion question) {
-    try {
-      Get.delete<QuestionTrainController>(force: true);
-    } catch (e) {
-      print('Failed to delete QuestionTrainController: $e');
-    }
-
     final String title =
         (question.categoryName != null && question.categoryName!.isNotEmpty)
             ? question.categoryName!
             : '题目搜索';
 
+    print('🔍 搜索跳转: question.id=${question.id}, title=$title');
+    print('🔍 rawJson keys: ${question.rawJson.keys.toList()}');
+
     Get.toNamed(
-      Routes.QUESTION_TRAIN,
+      '/question-train',
       preventDuplicates: false,
       arguments: {
         'pageType': 'search',
