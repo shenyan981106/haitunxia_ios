@@ -105,6 +105,60 @@ class SubsectionModel {
   }
 }
 
+// 答案配置项（用于简答题的关键词评分）
+class AnswerConfig {
+  final String answer;
+  final String score;
+
+  AnswerConfig({
+    required this.answer,
+    required this.score,
+  });
+
+  factory AnswerConfig.fromJson(Map<String, dynamic> json) {
+    return AnswerConfig(
+      answer: json['answer']?.toString() ?? '',
+      score: json['score']?.toString() ?? '0',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'answer': answer,
+      'score': score,
+    };
+  }
+}
+
+// 答案详情（用于简答题）
+class AnswerDetail {
+  final String answer;
+  final List<AnswerConfig> config;
+
+  AnswerDetail({
+    required this.answer,
+    required this.config,
+  });
+
+  factory AnswerDetail.fromJson(Map<String, dynamic> json) {
+    return AnswerDetail(
+      answer: json['answer']?.toString() ?? '',
+      config: json['config'] != null
+          ? (json['config'] as List)
+              .map((e) => AnswerConfig.fromJson(e))
+              .toList()
+          : [],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'answer': answer,
+      'config': config.map((e) => e.toJson()).toList(),
+    };
+  }
+}
+
 // 题目模型
 class Question {
   final String id;
@@ -124,6 +178,22 @@ class Question {
   final int? questionStatus; // 题目状态：1-未做 2-已做正确 3-已做错误
   final List<int>? userAnswer; // 用户之前选择的答案索引（用于恢复已答记录）
 
+  // 简答题相关字段
+  final AnswerDetail? answerDetail; // 简答题答案详情
+
+  // 材料题相关字段
+  final int isMaterialChild; // 是否是材料题子题（0-否，1-是）
+  final int materialQuestionId; // 父题目ID
+  final String? materialTitle; // 材料题标题
+  final int materialScore; // 材料题分数
+  final List<Question> materialQuestions; // 子题目列表
+
+  // 视频相关字段
+  final String? titleVideo;
+  final String? explainVideo;
+  final String? titleVideoUrl;
+  final String? explainVideoUrl;
+
   Question({
     required this.id,
     required this.projectId,
@@ -142,6 +212,16 @@ class Question {
     this.cateId = '',
     this.questionStatus,
     this.userAnswer,
+    this.answerDetail,
+    this.isMaterialChild = 0,
+    this.materialQuestionId = 0,
+    this.materialTitle,
+    this.materialScore = 0,
+    this.materialQuestions = const [],
+    this.titleVideo,
+    this.explainVideo,
+    this.titleVideoUrl,
+    this.explainVideoUrl,
   });
 
   factory Question.fromJson(Map<String, dynamic> json) {
@@ -169,6 +249,25 @@ class Question {
               ? List<int>.from(json['user_answer'])
               : null)
           : null,
+      // 简答题相关
+      answerDetail: json['answer'] != null && json['answer'] is Map
+          ? AnswerDetail.fromJson(json['answer'])
+          : null,
+      // 材料题相关
+      isMaterialChild: json['is_material_child'] ?? 0,
+      materialQuestionId: json['material_question_id'] ?? 0,
+      materialTitle: json['material_title']?.toString(),
+      materialScore: json['material_score'] ?? 0,
+      materialQuestions: json['material_questions'] != null
+          ? (json['material_questions'] as List)
+              .map((e) => Question.fromJson(e))
+              .toList()
+          : [],
+      // 视频相关
+      titleVideo: json['title_video']?.toString(),
+      explainVideo: json['explain_video']?.toString(),
+      titleVideoUrl: json['title_video_url']?.toString(),
+      explainVideoUrl: json['explain_video_url']?.toString(),
     );
   }
 }

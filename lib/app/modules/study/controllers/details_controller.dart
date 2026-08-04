@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart' as dio;
-import 'package:superplayer_widget/demo_superplayer_lib.dart';
+import '../services/study_video_adapter.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../services/snackbar_utils.dart';
@@ -18,8 +18,8 @@ class DetailsController extends GetxController {
 
   final RxBool isLoading = false.obs;
 
-  SuperPlayerController? superPlayerController;
-  StreamSubscription? _playerEventSubscription;
+  StudyVideoAdapter? videoAdapter;
+  StreamSubscription<StudyVideoEvent>? _playerEventSubscription;
 
   final RxString currentVideoUrl = ''.obs;
   final RxString currentVideoTitle = ''.obs;
@@ -58,54 +58,39 @@ class DetailsController extends GetxController {
   }
 
   void initPlayer(BuildContext context) {
-    if (_isPlayerInitialized && superPlayerController != null) {
+    if (_isPlayerInitialized && videoAdapter != null) {
       return;
     }
 
-    if (superPlayerController != null) {
-      superPlayerController!.releasePlayer();
+    if (videoAdapter != null) {
       _playerEventSubscription?.cancel();
+      videoAdapter!.dispose();
     }
 
-    superPlayerController = SuperPlayerController(context);
+    videoAdapter = StudyVideoAdapter.create();
+    videoAdapter!.init(context);
 
-    _playerEventSubscription =
-        superPlayerController!.onSimplePlayerEventBroadcast.listen((event) {
-      String evtName = event["event"];
-      if (evtName == SuperPlayerViewEvent.onStartFullScreenPlay) {
-        isFullScreen.value = true;
-        // 切换到横屏并隐藏系统 UI，让播放器铺满整个物理屏幕
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      } else if (evtName == SuperPlayerViewEvent.onStopFullScreenPlay) {
-        isFullScreen.value = false;
-        // 恢复竖屏与系统 UI
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-        ]);
-        SystemChrome.setEnabledSystemUIMode(
-          SystemUiMode.manual,
-          overlays: SystemUiOverlay.values,
-        );
-      } else if (evtName == SuperPlayerViewEvent.onSuperPlayerDidStart) {
+    _playerEventSubscription = videoAdapter!.events.listen((event) {
+      if (event is EnterFullscreenEvent) {
+        enterFullscreen();
+      } else if (event is ExitFullscreenEvent) {
+        exitFullscreen();
+      } else if (event is StartEvent) {
         _isVideoActuallyPlayed = true;
         isVideoPlaying.value = true;
         _dismissVideoLoading();
-      } else if (evtName == SuperPlayerViewEvent.onSuperPlayerProgress) {
+      } else if (event is ProgressEvent) {
         _isVideoActuallyPlayed = true;
         _dismissVideoLoading();
-      } else if (evtName == SuperPlayerViewEvent.onSuperPlayerError) {
+      } else if (event is ErrorEvent) {
         _dismissVideoLoading();
-        SnackbarUtils.showError('视频播放出错');
+        SnackbarUtils.showError(event.message);
         _isVideoActuallyPlayed = false;
-      } else if (evtName == SuperPlayerViewEvent.onSuperPlayerDidEnd) {
+      } else if (event is CompleteEvent) {
         if (_isHandlingCompletion) return;
         isVideoPlaying.value = false;
         if (_isVideoActuallyPlayed ||
-            (superPlayerController?.currentDuration ?? 0) > 2) {
+            (videoAdapter?.currentPosition ?? 0) > 2) {
           _handleVideoCompleted();
         }
         _isVideoActuallyPlayed = false;
@@ -113,6 +98,50 @@ class DetailsController extends GetxController {
     });
 
     _isPlayerInitialized = true;
+  }
+
+  /// 进入全屏：横屏 + 隐藏系统 UI。
+  void enterFullscreen() {
+    isFullScreen.value = true;
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  /// 退出全屏：恢复竖屏与系统 UI。
+  void exitFullscreen() {
+    isFullScreen.value = false;
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
+  }
+
+  /// 全屏切换（供播放器视图内的全屏按钮回调）。
+  void toggleFullscreen() {
+    if (isFullScreen.value) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  }
+
+  /// 返回平台对应的播放器视图（供 details_view 调用）。
+  /// 内部会幂等地初始化播放器。
+  Widget buildPlayerView(BuildContext context) {
+    initPlayer(context);
+    final adapter = videoAdapter;
+    if (adapter == null) return const SizedBox.shrink();
+    return adapter.buildView(
+      context,
+      fullscreen: isFullScreen.value,
+      onToggleFullscreen: toggleFullscreen,
+    );
   }
 
   Future<void> getCourseDetail(int id) async {
@@ -185,7 +214,7 @@ class DetailsController extends GetxController {
     final initialPosition =
         duration > 0 && lastPosition >= duration - 3 ? 0 : lastPosition;
 
-    if (superPlayerController != null) {
+    if (videoAdapter != null) {
       _saveCurrentProgress();
     }
 
@@ -195,15 +224,15 @@ class DetailsController extends GetxController {
 
     if (videoUrl != null && videoUrl.isNotEmpty) {
       _showVideoLoading();
-      playVideoWithSuperPlayer(videoUrl, title, initialPosition);
+      playVideo(videoUrl, title, initialPosition);
     } else {
       SnackbarUtils.showInfo('该课程暂无视频 $title');
     }
   }
 
-  void playVideoWithSuperPlayer(String url, String title,
-      [int initialPosition = 0]) {
-    if (superPlayerController == null) {
+  void playVideo(String url, String title, [int initialPosition = 0]) {
+    final adapter = videoAdapter;
+    if (adapter == null) {
       _dismissVideoLoading();
       return;
     }
@@ -213,24 +242,21 @@ class DetailsController extends GetxController {
     currentVideoTitle.value = title;
     isVideoPlaying.value = true;
 
-    superPlayerController!.startPos = initialPosition.toDouble();
-
-    SuperPlayerModel model = SuperPlayerModel();
-    model.videoURL = ApiClient.replaceUri(url);
-    model.title = title;
-    model.coverUrl = '';
-    model.playAction = SuperPlayerModel.PLAY_ACTION_AUTO_PLAY;
-    model.isEnableDownload = false;
-
-    superPlayerController!.playWithModelNeedLicence(model);
+    adapter.play(
+      ApiClient.replaceUri(url),
+      title,
+      startPos: initialPosition.toDouble(),
+    );
   }
 
-  /// 显示视频加载弹窗，并启动超时兜底，避免大视频卡在加载态
+  /// 显示视频加载弹窗，并启动超时兜底，避免大视频卡在加载态。
+  /// 时长设为 18s，比 OhosVideoAdapter 的 15s initialize 超时略晚，
+  /// 让适配器先发出带具体原因的 ErrorEvent，本定时器仅作最终兜底。
   void _showVideoLoading() {
     _isLoadingVideo = true;
     SnackbarUtils.showLoading(msg: '视频加载中..');
     _videoLoadingTimer?.cancel();
-    _videoLoadingTimer = Timer(const Duration(seconds: 15), () {
+    _videoLoadingTimer = Timer(const Duration(seconds: 18), () {
       if (_isLoadingVideo) {
         _isLoadingVideo = false;
         SnackbarUtils.dismissLoading();
@@ -306,14 +332,14 @@ class DetailsController extends GetxController {
   }
 
   Future<void> _saveCurrentProgress() async {
-    if (_currentLessonId == null || superPlayerController == null) return;
+    if (_currentLessonId == null || videoAdapter == null) return;
 
     final courseId = courseDetail['id'];
     if (courseId == null) return;
 
     try {
-      int position = (superPlayerController!.currentDuration).round();
-      int duration = (superPlayerController!.videoDuration).round();
+      int position = videoAdapter!.currentPosition;
+      int duration = videoAdapter!.duration;
 
       int watchDuration = 0;
       if (_playStartTime != null) {
@@ -352,7 +378,7 @@ class DetailsController extends GetxController {
     }
     _saveCurrentProgress();
     _playerEventSubscription?.cancel();
-    superPlayerController?.releasePlayer();
+    videoAdapter?.dispose();
     // 页面退出时强制恢复竖屏与系统 UI，避免影响其他页面
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,

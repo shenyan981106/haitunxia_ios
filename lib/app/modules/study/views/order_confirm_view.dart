@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:dio/dio.dart';
 import '../../../services/screenAdapter.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../services/snackbar_utils.dart';
+import '../../../utils/api_error_handler.dart';
 
 class OrderConfirmView extends StatefulWidget {
   final Map<String, dynamic> courseData;
@@ -17,10 +19,18 @@ class OrderConfirmView extends StatefulWidget {
 }
 
 class _OrderConfirmViewState extends State<OrderConfirmView> {
-  String selectedPayment = 'wechat';
+  String selectedPayment = '';
   final nameController = TextEditingController();
   final phoneController = TextEditingController();
   final addressController = TextEditingController();
+  final List<Map<String, dynamic>> _payMethods = [];
+  bool _isLoadingPayMethods = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPayMethods();
+  }
 
   @override
   void dispose() {
@@ -28,6 +38,60 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
     phoneController.dispose();
     addressController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchPayMethods() async {
+    try {
+      final response = await ApiClient.to.get('addons/exam/pay/payMethod');
+      final body = response.data;
+      dynamic rawList;
+
+      if (body is Map && body['data'] is List) {
+        rawList = body['data'];
+      } else if (body is Map &&
+          body['data'] is Map &&
+          (body['data']['list'] is List)) {
+        rawList = body['data']['list'];
+      } else if (body is List) {
+        rawList = body;
+      }
+
+      if (rawList is List) {
+        final methods = rawList
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+
+        final enabledMethods = methods.where((m) => m['status'] == 1).toList();
+        setState(() {
+          _payMethods.addAll(enabledMethods);
+          if (enabledMethods.isNotEmpty) {
+            selectedPayment = enabledMethods.first['code']?.toString() ?? '';
+          }
+        });
+      }
+    } on DioException catch (e) {
+      ApiErrorHandler.handleDioError(e, fallbackMessage: '获取支付方式失败');
+    } catch (e) {
+      ApiErrorHandler.handleError(e, fallbackMessage: '获取支付方式失败');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingPayMethods = false;
+        });
+      }
+    }
+  }
+
+  String _getSvgForCode(String code) {
+    switch (code) {
+      case 'wechat':
+        return 'assets/fonts/wechat.svg';
+      case 'alipay':
+        return 'assets/fonts/zhifubao.svg';
+      default:
+        return 'assets/fonts/wechat.svg';
+    }
   }
 
   @override
@@ -266,7 +330,7 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
     );
   }
 
-  /// 支付方式选择卡片
+  /// 支付方式选择卡片（动态渲染）
   Widget _buildPaymentCard() {
     return Container(
       decoration: BoxDecoration(
@@ -286,31 +350,55 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
             ),
           ),
           SizedBox(height: ScreenAdapter.height(36)),
-
-          // 两个支付选项等宽排列
-          Row(
-            children: [
-              // 微信支付
-              Expanded(
-                child: _buildPaymentOption(
-                  svgPath: 'assets/fonts/wechat.svg',
-                  label: '微信支付',
-                  isSelected: selectedPayment == 'wechat',
-                  onTap: () => setState(() => selectedPayment = 'wechat'),
+          if (_isLoadingPayMethods)
+            Center(
+              child: Padding(
+                padding:
+                    EdgeInsets.symmetric(vertical: ScreenAdapter.height(20)),
+                child: CircularProgressIndicator(color: Color(0xFF3D7CFF)),
+              ),
+            )
+          else if (_payMethods.isEmpty)
+            Center(
+              child: Padding(
+                padding:
+                    EdgeInsets.symmetric(vertical: ScreenAdapter.height(20)),
+                child: Text(
+                  '暂无可用支付方式',
+                  style: TextStyle(
+                    fontSize: ScreenAdapter.fontSize(32),
+                    color: Color(0xFF999999),
+                  ),
                 ),
               ),
-              SizedBox(width: ScreenAdapter.width(24)),
-              // 支付宝支付
-              Expanded(
-                child: _buildPaymentOption(
-                  svgPath: 'assets/fonts/zhifubao.svg',
-                  label: '支付宝',
-                  isSelected: selectedPayment == 'alipay',
-                  onTap: () => setState(() => selectedPayment = 'alipay'),
-                ),
-              ),
-            ],
-          ),
+            )
+          else ...[
+            Row(
+              children: _payMethods.asMap().entries.map((entry) {
+                final index = entry.key;
+                final method = entry.value;
+                final code = method['code']?.toString() ?? '';
+                final name = method['name']?.toString() ?? '';
+                final svg = _getSvgForCode(code);
+                final isSelected = selectedPayment == code;
+                return Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      right: index == _payMethods.length - 1
+                          ? 0
+                          : ScreenAdapter.width(24),
+                    ),
+                    child: _buildPaymentOption(
+                      svgPath: svg,
+                      label: name,
+                      isSelected: isSelected,
+                      onTap: () => setState(() => selectedPayment = code),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ],
       ),
     );
@@ -433,8 +521,16 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
       SnackbarUtils.showError('请输入正确的11位手机号码');
       return;
     }
+    if (selectedPayment.isEmpty) {
+      SnackbarUtils.showError('请选择支付方式');
+      return;
+    }
 
-    final paymentName = selectedPayment == 'wechat' ? '微信' : '支付宝';
-    SnackbarUtils.showInfo('已选择$paymentName支付，订单已提交');
+    final payMethod = _payMethods.firstWhere(
+      (m) => m['code']?.toString() == selectedPayment,
+      orElse: () => <String, dynamic>{'name': '默认'},
+    );
+    final payName = payMethod['name']?.toString() ?? '默认支付';
+    SnackbarUtils.showInfo('已选择$payName支付，订单已提交');
   }
 }

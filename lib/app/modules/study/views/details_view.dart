@@ -6,14 +6,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf_render/pdf_render_widgets.dart';
 import 'package:get/get.dart';
-import 'package:superplayer_widget/demo_superplayer_lib.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import '../../../services/screenAdapter.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../data/services/auth_service.dart';
 // TODO: 支付对接完成后恢复导入
-// import '../../../routes/app_pages.dart';
+import '../../../routes/app_pages.dart';
 import '../../../components/common_dialog.dart';
 import '../controllers/details_controller.dart';
 import '../../../services/snackbar_utils.dart';
@@ -393,8 +392,6 @@ class _CatalogListContentState extends State<_CatalogListContent> {
 class DetailsView extends GetView<DetailsController> {
   DetailsView({Key? key}) : super(key: key);
 
-  final GlobalKey _playerViewKey = GlobalKey();
-
   @override
   Widget build(BuildContext context) {
     // 强制注册控制器，以防路由跳转时丢控制器
@@ -660,8 +657,8 @@ class DetailsView extends GetView<DetailsController> {
                         return;
                       }
                       // TODO: 支付对接完成后恢复跳转下单页
-// Get.toNamed(Routes.ORDER_CONFIRM, arguments: detail);
-                      SnackbarUtils.showInfo('请联系客服');
+                      Get.toNamed(Routes.ORDER_CONFIRM, arguments: detail);
+                      // SnackbarUtils.showInfo('请联系客服');
                     },
               child: Transform.translate(
                 offset:
@@ -1525,11 +1522,7 @@ class DetailsView extends GetView<DetailsController> {
             Builder(
               builder: (context) {
                 controller.initPlayer(context);
-                return SuperPlayerView(
-                  controller.superPlayerController!,
-                  viewKey: _playerViewKey,
-                  renderMode: SuperPlayerRenderMode.FILL_VIEW,
-                );
+                return controller.buildPlayerView(context);
               },
             ),
           ],
@@ -1555,10 +1548,7 @@ class DetailsView extends GetView<DetailsController> {
           Builder(
             builder: (context) {
               controller.initPlayer(context);
-              return SuperPlayerView(
-                controller.superPlayerController!,
-                viewKey: _playerViewKey,
-              );
+              return controller.buildPlayerView(context);
             },
           ),
           Obx(() {

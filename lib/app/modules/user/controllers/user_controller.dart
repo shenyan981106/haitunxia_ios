@@ -20,6 +20,9 @@ class UserController extends GetxController {
       if (data != null && data['code'] == 1 && data['data'] is Map) {
         return Map<String, dynamic>.from(data['data'] as Map);
       }
+      // 业务失败（code != 1）：必须清空缓存，否则这个 null 结果会被永久缓存，
+      // 导致客服/报考入口后续点击全部“没反应”，只有杀进程才能恢复
+      _configFuture = null;
       SnackbarUtils.showError(data?['msg'] ?? '获取配置失败');
       return null;
     }).catchError((error) {

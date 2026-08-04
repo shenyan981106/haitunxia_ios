@@ -35,6 +35,9 @@ class QuestionTrainController extends GetxController {
   // 用户答案记录：Map<题目索引, 用户选择的答案索引列表>
   final RxMap<int, List<int>> userAnswers = <int, List<int>>{}.obs;
 
+  // 简答题答案记录：Map<题目索引, 用户输入的答案>
+  final RxMap<int, String> shortAnswers = <int, String>{}.obs;
+
   // 答题结果记录：Map<题目索引, 是否正确>
   final RxMap<int, bool> answerResults = <int, bool>{}.obs;
 
@@ -1701,6 +1704,8 @@ class QuestionTrainController extends GetxController {
       type = 'multi';
     } else if (kind == 'JUDGE') {
       type = 'judgment';
+    } else if (kind == 'SHORT') {
+      type = 'short'; // 简答题
     } else {
       type = 'single';
     }
@@ -1708,6 +1713,79 @@ class QuestionTrainController extends GetxController {
     // 解析题目内容
     final content = json['title']?.toString() ?? '';
 
+    // ====== 简答题特殊处理 ======
+    if (kind == 'SHORT') {
+      print('🔍[$questionId] 检测到简答题，跳过选项解析');
+
+      // 解析解析（支持更多字段名）
+      final explanation = json['explain']?.toString() ??
+          json['explanation']?.toString() ??
+          json['analysis']?.toString() ??
+          '';
+
+      // 解析难度
+      String difficulty = 'medium';
+      final difficultyStr = json['difficulty']?.toString() ?? '';
+      if (difficultyStr == 'EASY') {
+        difficulty = 'easy';
+      } else if (difficultyStr == 'HARD') {
+        difficulty = 'hard';
+      }
+
+      // 解析收藏状态
+      final isCollected = json['collected'] == true ||
+          json['collected'] == 1 ||
+          json['is_collected'] == true;
+
+      // 解析材料题相关字段
+      final isMaterialChild = json['is_material_child'] ?? 0;
+      final materialQuestionId = json['material_question_id'] ?? 0;
+      final materialTitle = json['material_title']?.toString();
+      final materialScore = json['material_score'] ?? 0;
+
+      // 解析子题目列表（如果有）
+      List<Question> materialQuestions = [];
+      if (json['material_questions'] != null &&
+          json['material_questions'] is List) {
+        materialQuestions = (json['material_questions'] as List)
+            .map((e) => _parseQuestionFromPaper(e))
+            .toList();
+      }
+
+      return Question(
+        id: questionId,
+        projectId: json['project_id']?.toString() ?? '',
+        subjectId: json['subject_id']?.toString() ?? '',
+        chapterId: json['chapter_id']?.toString() ?? '',
+        type: type,
+        kind: kind,
+        content: content,
+        options: [], // 简答题没有选项
+        correctAnswers: [], // 简答题没有固定答案索引
+        answer: null, // 简答题的答案在answerDetail中
+        explanation: explanation,
+        difficulty: difficulty,
+        isCollected: isCollected,
+        cateId: json['cate_id']?.toString() ?? '',
+        // 简答题相关
+        answerDetail: json['answer'] != null && json['answer'] is Map
+            ? AnswerDetail.fromJson(json['answer'])
+            : null,
+        // 材料题相关
+        isMaterialChild: isMaterialChild,
+        materialQuestionId: materialQuestionId,
+        materialTitle: materialTitle,
+        materialScore: materialScore,
+        materialQuestions: materialQuestions,
+        // 视频相关
+        titleVideo: json['title_video']?.toString(),
+        explainVideo: json['explain_video']?.toString(),
+        titleVideoUrl: json['title_video_url']?.toString(),
+        explainVideoUrl: json['explain_video_url']?.toString(),
+      );
+    }
+
+    // ====== 选择题/判断题处理 ======
     final rawOptions = _pickRawOptions(json);
     final options =
         _parseOptionsWithImages(rawOptions, json['options_img'], kind);
@@ -1884,10 +1962,104 @@ class QuestionTrainController extends GetxController {
       type = 'multi';
     } else if (kind == 'JUDGE') {
       type = 'judgment';
+    } else if (kind == 'SHORT') {
+      type = 'short'; // 简答题
     } else {
       type = 'single';
     }
 
+    final content = json['title']?.toString() ?? '';
+
+    // ====== 简答题特殊处理 ======
+    if (kind == 'SHORT') {
+      print('🔍[$questionId] 检测到简答题，跳过选项解析');
+
+      // 解析 question_status
+      int? questionStatus;
+      if (json.containsKey('question_status')) {
+        final qs = json['question_status'];
+        if (qs is int) {
+          questionStatus = qs;
+        } else {
+          questionStatus = int.tryParse(qs.toString());
+        }
+      }
+
+      // 解析用户之前选择的答案（用于恢复已答记录）
+      // 简答题的用户答案是字符串，不是索引列表
+      String? userAnswerStr;
+      final userAnswerFields = [
+        'user_answer',
+        'my_answer',
+        'selected_answer',
+        'last_answer'
+      ];
+      for (var fieldName in userAnswerFields) {
+        if (json.containsKey(fieldName) && json[fieldName] != null) {
+          userAnswerStr = json[fieldName].toString();
+          if (userAnswerStr.isNotEmpty) {
+            print('🔍[$questionId] 从字段 "$fieldName" 找到用户答案: $userAnswerStr');
+            break;
+          }
+        }
+      }
+
+      // 解析材料题相关字段
+      final isMaterialChild = json['is_material_child'] ?? 0;
+      final materialQuestionId = json['material_question_id'] ?? 0;
+      final materialTitle = json['material_title']?.toString();
+      final materialScore = json['material_score'] ?? 0;
+
+      // 解析子题目列表（如果有）
+      List<Question> materialQuestions = [];
+      if (json['material_questions'] != null &&
+          json['material_questions'] is List) {
+        materialQuestions = (json['material_questions'] as List)
+            .map((e) => _parseQuestion(e))
+            .toList();
+      }
+
+      return Question(
+        id: questionId,
+        projectId: json['project_id']?.toString() ?? '',
+        subjectId: json['subject_id']?.toString() ?? '',
+        chapterId: json['chapter_id']?.toString() ?? '',
+        type: type,
+        kind: kind,
+        content: content,
+        options: [], // 简答题没有选项
+        correctAnswers: [], // 简答题没有固定答案索引
+        answer: null, // 简答题的答案在answerDetail中
+        explanation: json['explain']?.toString() ??
+            json['explanation']?.toString() ??
+            json['analysis']?.toString() ??
+            '',
+        difficulty: _parseDifficulty(json['difficulty']),
+        isCollected: json['collected'] == true ||
+            json['collected'] == 1 ||
+            json['is_collected'] == true,
+        cateId: json['cate_id']?.toString() ?? '',
+        questionStatus: questionStatus,
+        userAnswer: null, // 简答题不使用索引列表
+        // 简答题相关
+        answerDetail: json['answer'] != null && json['answer'] is Map
+            ? AnswerDetail.fromJson(json['answer'])
+            : null,
+        // 材料题相关
+        isMaterialChild: isMaterialChild,
+        materialQuestionId: materialQuestionId,
+        materialTitle: materialTitle,
+        materialScore: materialScore,
+        materialQuestions: materialQuestions,
+        // 视频相关
+        titleVideo: json['title_video']?.toString(),
+        explainVideo: json['explain_video']?.toString(),
+        titleVideoUrl: json['title_video_url']?.toString(),
+        explainVideoUrl: json['explain_video_url']?.toString(),
+      );
+    }
+
+    // ====== 选择题/判断题处理 ======
     final rawOptions = _pickRawOptions(json);
     final options =
         _parseOptionsWithImages(rawOptions, json['options_img'], kind);
@@ -2112,8 +2284,21 @@ class QuestionTrainController extends GetxController {
   }
 
   // 格式化答案索引为字母（如 [0,1] -> "A,B"）
-  String formatAnswerIndices(List<int> indices) {
-    if (indices.isEmpty) return '未答';
+  String formatAnswerIndices(int index) {
+    final question = questions[index];
+    final indices = userAnswers[index];
+
+    // 简答题：显示用户输入的文本答案
+    if (question.kind == 'SHORT') {
+      final answer = shortAnswers[index] ?? '';
+      if (answer.isEmpty) return '未答';
+      return answer;
+    }
+
+    // 选择题/判断题：转换为字母
+    if (indices == null || indices.isEmpty) return '未答';
+    // 简答题标记为已答（[-1]），但没有实际选项索引
+    if (indices.length == 1 && indices[0] == -1) return '已答';
     return indices.map((i) => String.fromCharCode(65 + i)).join(',');
   }
 
@@ -2154,12 +2339,17 @@ class QuestionTrainController extends GetxController {
       final question = questions[i];
       final userAnswer = userAnswers[i];
 
-      // 将选项索引转换为字母（如 [0,1] -> "A,B"）
-      String answerLetters = '';
-      if (userAnswer != null && userAnswer.isNotEmpty) {
-        answerLetters = userAnswer.map((idx) {
-          return String.fromCharCode('A'.codeUnitAt(0) + idx);
-        }).join(',');
+      String answerStr = '';
+      if (question.kind == 'SHORT') {
+        // 简答题：使用用户输入的文本答案
+        answerStr = shortAnswers[i] ?? '';
+      } else {
+        // 选择题/判断题：将选项索引转换为字母（如 [0,1] -> "A,B"）
+        if (userAnswer != null && userAnswer.isNotEmpty) {
+          answerStr = userAnswer.map((idx) {
+            return String.fromCharCode('A'.codeUnitAt(0) + idx);
+          }).join(',');
+        }
       }
 
       // id 转为整数
@@ -2169,8 +2359,9 @@ class QuestionTrainController extends GetxController {
 
       questionsData[i.toString()] = {
         'id': questionIdInt,
-        'answer': answerLetters,
-        'material_id': 0,
+        'answer': answerStr,
+        'material_id':
+            question.isMaterialChild == 1 ? question.materialQuestionId : 0,
       };
     }
 
@@ -2265,34 +2456,60 @@ class QuestionTrainController extends GetxController {
 
         if (userAnswer != null && userAnswer.isNotEmpty) {
           answeredCount++;
-          final isCorrect = _listEquals(userAnswer, question.correctAnswers);
 
-          if (isCorrect) {
+          if (question.kind == 'SHORT') {
+            // 简答题：直接标记为正确（需要人工评分）
             correctCount++;
+
+            // 记录每道已答题目的日志（如果之前没记录过的话）
+            if (!_loggedQuestionIndices.contains(i)) {
+              final cateId = int.tryParse(question.cateId) ?? 0;
+              final questionId = int.tryParse(question.id) ?? 0;
+              final shortAnswer = shortAnswers[i] ?? '';
+
+              await _addQuestionLog(
+                questionId: questionId,
+                cateId: cateId,
+                userAnswer: shortAnswer,
+                isCorrect: 1,
+                timeSpent: 0,
+                sourceType: 'TRAIN',
+                sourceId: 0,
+              );
+
+              _loggedQuestionIndices.add(i);
+            }
           } else {
-            wrongCount++;
-          }
+            // 选择题/判断题
+            final isCorrect = _listEquals(userAnswer, question.correctAnswers);
 
-          // 记录每道已答题目的日志（如果之前没记录过的话）
-          if (!_loggedQuestionIndices.contains(i)) {
-            final cateId = int.tryParse(question.cateId) ?? 0;
-            final questionId = int.tryParse(question.id) ?? 0;
+            if (isCorrect) {
+              correctCount++;
+            } else {
+              wrongCount++;
+            }
 
-            String userAnswerStr = userAnswer.map((e) {
-              return String.fromCharCode('A'.codeUnitAt(0) + e);
-            }).join(',');
+            // 记录每道已答题目的日志（如果之前没记录过的话）
+            if (!_loggedQuestionIndices.contains(i)) {
+              final cateId = int.tryParse(question.cateId) ?? 0;
+              final questionId = int.tryParse(question.id) ?? 0;
 
-            await _addQuestionLog(
-              questionId: questionId,
-              cateId: cateId,
-              userAnswer: userAnswerStr,
-              isCorrect: isCorrect ? 1 : 0,
-              timeSpent: 0,
-              sourceType: 'TRAIN',
-              sourceId: 0,
-            );
+              String userAnswerStr = userAnswer.map((e) {
+                return String.fromCharCode('A'.codeUnitAt(0) + e);
+              }).join(',');
 
-            _loggedQuestionIndices.add(i);
+              await _addQuestionLog(
+                questionId: questionId,
+                cateId: cateId,
+                userAnswer: userAnswerStr,
+                isCorrect: isCorrect ? 1 : 0,
+                timeSpent: 0,
+                sourceType: 'TRAIN',
+                sourceId: 0,
+              );
+
+              _loggedQuestionIndices.add(i);
+            }
           }
         }
       }
@@ -2613,6 +2830,68 @@ class QuestionTrainController extends GetxController {
   // 提交答案（主要是多选题需要确认，单选题通常自动下一题或直接显示结果，这里简单实现为显示解析）
   void submitAnswer() {
     showExplanation.value = true;
+  }
+
+  // 更新简答题答案
+  void updateShortAnswer(int index, String answer) {
+    shortAnswers[index] = answer;
+    print('📝 更新简答题答案: index=$index, answer=$answer');
+  }
+
+  // 提交简答题答案
+  void submitShortAnswer(int index) {
+    final answer = shortAnswers[index] ?? '';
+    if (answer.isEmpty) {
+      SnackbarUtils.showInfo('请先输入答案');
+      return;
+    }
+
+    final question = questions[index];
+
+    // 标记为已答（使用 [-1] 表示简答题已答）
+    userAnswers[index] = [-1];
+
+    // 记录答题日志
+    if (!_loggedQuestionIndices.contains(index)) {
+      final cateId = int.tryParse(question.cateId) ?? 0;
+      final questionId = int.tryParse(question.id) ?? 0;
+
+      // 简答题暂时标记为正确（需要人工评分）
+      _addQuestionLog(
+        questionId: questionId,
+        cateId: cateId,
+        userAnswer: answer,
+        isCorrect: 1, // 简答题默认标记为正确，等待人工评分
+        timeSpent: 0,
+        sourceType: paperId != null ? 'PAPER' : 'TRAIN',
+        sourceId: paperId != null
+            ? (paperId is int
+                ? paperId!
+                : int.tryParse(paperId.toString()) ?? 0)
+            : 0,
+      );
+
+      _loggedQuestionIndices.add(index);
+    }
+
+    // 显示解析
+    showExplanation.value = true;
+
+    // 答题模式（TRAINING/EXAM）下才自动跳转下一题，背题模式（VIEW）不跳转
+    if (pageMode.value != 'VIEW') {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (currentQuestionIndex.value == index) {
+          if (currentQuestionIndex.value < questions.length - 1) {
+            pageController.nextPage(
+              duration: Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            );
+          }
+        }
+      });
+    }
+
+    print('✅ 简答题答案已提交: index=$index, answer=$answer');
   }
 
   // 下一题

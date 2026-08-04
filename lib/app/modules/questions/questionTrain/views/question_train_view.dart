@@ -946,6 +946,13 @@ class _QuestionCard extends GetView<QuestionTrainController> {
         children: [
           _buildQuestionContainer(question),
 
+          // 简答题正确答案显示
+          if (question.kind == 'SHORT' && controller.showExplanation.value) ...[
+            _buildSectionGap(),
+            _CorrectAnswerSection(
+                question: question, isDark: isDark, theme: theme),
+          ],
+
           // 答案统计 + 解析区域：背题模式下点击选项后才显示
           if (isViewMode && controller.showExplanation.value) ...[
             _buildSectionGap(),
@@ -964,6 +971,12 @@ class _QuestionCard extends GetView<QuestionTrainController> {
   }
 
   Widget _buildQuestionContainer(Question question) {
+    // 简答题和材料题特殊处理
+    if (question.kind == 'SHORT') {
+      return _buildShortAnswerQuestion(question);
+    }
+
+    // 选择题/判断题
     return Container(
       decoration: BoxDecoration(
         color: theme.card,
@@ -990,6 +1003,111 @@ class _QuestionCard extends GetView<QuestionTrainController> {
                     theme: theme,
                   )),
           _buildViewModeMultiSelectButton(question),
+        ],
+      ),
+    );
+  }
+
+  // 简答题UI
+  Widget _buildShortAnswerQuestion(Question question) {
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.card,
+        borderRadius: BorderRadius.circular(ScreenAdapter.radius(20)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        ScreenAdapter.width(32),
+        ScreenAdapter.height(12),
+        ScreenAdapter.width(32),
+        ScreenAdapter.width(32),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. 题型标签（简答题）
+          _QuestionTypeLabel(question: question),
+          // 2. 材料题标题（如果有）- 紧跟在题型标签下方
+          if (question.isMaterialChild == 1 && question.materialTitle != null) ...[
+            SizedBox(height: ScreenAdapter.height(20)),
+            Text(
+              question.materialTitle!,
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(52),
+                color: const Color(0xFFFFB84D),
+                height: 1.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          // 3. 题目内容
+          SizedBox(height: ScreenAdapter.height(20)),
+          _QuestionHtmlText(
+            content: question.content,
+            style: TextStyle(
+              fontSize:
+                  ScreenAdapter.fontSize(46) * controller.fontSizeScale.value,
+              height: controller.lineHeight.value,
+              fontWeight: FontWeight.w400,
+              color: isDark ? const Color(0xFF999999) : const Color(0xFF3D444C),
+            ),
+          ),
+          SizedBox(height: ScreenAdapter.height(40)),
+          // 简答题输入框
+          Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(ScreenAdapter.radius(12)),
+            ),
+            padding: EdgeInsets.all(ScreenAdapter.width(24)),
+            child: TextField(
+              maxLines: 6,
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(40),
+                color: theme.text,
+              ),
+              decoration: InputDecoration(
+                hintText: '请输入您的答案...',
+                hintStyle: TextStyle(
+                  fontSize: ScreenAdapter.fontSize(40),
+                  color: theme.text.withOpacity(0.5),
+                ),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+              ),
+              onChanged: (value) {
+                // 保存用户输入的答案
+                controller.updateShortAnswer(index, value);
+              },
+            ),
+          ),
+          SizedBox(height: ScreenAdapter.height(32)),
+          // 提交答案按钮
+          Center(
+            child: ElevatedButton(
+              onPressed: () {
+                // 提交简答题答案
+                controller.submitShortAnswer(index);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1890FF),
+                padding: EdgeInsets.symmetric(
+                  horizontal: ScreenAdapter.width(120),
+                  vertical: ScreenAdapter.height(28),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(ScreenAdapter.radius(40)),
+                ),
+              ),
+              child: Text(
+                '提交答案',
+                style: TextStyle(
+                  fontSize: ScreenAdapter.fontSize(40),
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1221,18 +1339,26 @@ class _AnswerStats extends GetView<QuestionTrainController> {
   @override
   Widget build(BuildContext context) {
     final question = controller.questions[index];
-    final userAnswers = controller.userAnswers[index] ?? [];
     final isCorrect = controller.answerResults[index] ?? false;
 
+    // 正确答案文本
     String correctText;
-    if (question.answer != null && question.answer!.isNotEmpty) {
+    if (question.kind == 'SHORT') {
+      // 简答题：显示答案详情中的答案
+      correctText = question.answerDetail?.answer ?? '--';
+    } else if (question.answer != null && question.answer!.isNotEmpty) {
       correctText = question.answer!;
     } else if (question.correctAnswers.isNotEmpty) {
-      correctText = controller.formatAnswerIndices(question.correctAnswers);
+      // 直接格式化正确答案索引
+      correctText = question.correctAnswers
+          .map((i) => String.fromCharCode(65 + i))
+          .join(',');
     } else {
       correctText = '--';
     }
-    final userText = controller.formatAnswerIndices(userAnswers);
+
+    // 用户答案文本
+    final userText = controller.formatAnswerIndices(index);
 
     return Container(
       margin: EdgeInsets.only(top: ScreenAdapter.height(24)),
@@ -1505,6 +1631,98 @@ class _ExplanationSection extends GetView<QuestionTrainController> {
                 height: 1.6,
                 fontSize: ScreenAdapter.fontSize(40) *
                     controller.fontSizeScale.value),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ==================== 正确答案显示组件（用于简答题） ====================
+class _CorrectAnswerSection extends StatelessWidget {
+  final Question question;
+  final bool isDark;
+  final _ThemeColors theme;
+
+  const _CorrectAnswerSection({
+    required this.question,
+    required this.isDark,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(title: '正确答案', isDark: isDark),
+        SizedBox(height: ScreenAdapter.height(24)),
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(ScreenAdapter.width(32)),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE6F7FF),
+            borderRadius: BorderRadius.circular(ScreenAdapter.radius(16)),
+            border: Border.all(
+              color: const Color(0xFF1890FF),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 显示主要答案
+              if (question.answerDetail?.answer != null)
+                Text(
+                  question.answerDetail!.answer,
+                  style: TextStyle(
+                    color: const Color(0xFF1890FF),
+                    fontSize: ScreenAdapter.fontSize(44),
+                    fontWeight: FontWeight.w500,
+                    height: 1.6,
+                  ),
+                ),
+              // 显示关键词评分规则（如果有）
+              if (question.answerDetail?.config != null &&
+                  question.answerDetail!.config.isNotEmpty) ...[
+                SizedBox(height: ScreenAdapter.height(16)),
+                Text(
+                  '评分关键词：',
+                  style: TextStyle(
+                    color: theme.text.withOpacity(0.7),
+                    fontSize: ScreenAdapter.fontSize(36),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(height: ScreenAdapter.height(8)),
+                Wrap(
+                  spacing: ScreenAdapter.width(16),
+                  runSpacing: ScreenAdapter.height(8),
+                  children: question.answerDetail!.config.map((config) {
+                    return Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ScreenAdapter.width(16),
+                        vertical: ScreenAdapter.height(8),
+                      ),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF333333)
+                            : const Color(0xFFF0F0F0),
+                        borderRadius:
+                            BorderRadius.circular(ScreenAdapter.radius(8)),
+                      ),
+                      child: Text(
+                        '${config.answer} (${config.score}分)',
+                        style: TextStyle(
+                          color: theme.text,
+                          fontSize: ScreenAdapter.fontSize(36),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ],
           ),
         ),
       ],

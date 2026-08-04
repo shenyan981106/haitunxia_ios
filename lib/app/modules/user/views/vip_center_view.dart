@@ -6,7 +6,9 @@ import '../../../services/screenAdapter.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../components/common_dialog.dart';
+import '../../../services/snackbar_utils.dart';
 import '../controllers/vip_center_controller.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 
 class VipCenterView extends GetView<VipCenterController> {
   const VipCenterView({Key? key}) : super(key: key);
@@ -564,6 +566,7 @@ class _BottomPayBarWidget extends StatefulWidget {
 
 class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
   bool isExpanded = false;
+  bool _agreed = false;
 
   @override
   void initState() {
@@ -804,9 +807,69 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
               ),
             ),
           ),
+          SizedBox(height: ScreenAdapter.height(12)),
+          Padding(
+            padding: EdgeInsets.only(left: ScreenAdapter.width(20)),
+            child: GestureDetector(
+              onTap: () => setState(() => _agreed = !_agreed),
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: ScreenAdapter.width(32),
+                    height: ScreenAdapter.width(32),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _agreed
+                          ? const Color(0xFFE89A3C)
+                          : Colors.transparent,
+                      border: Border.all(
+                        color: _agreed
+                            ? const Color(0xFFE89A3C)
+                            : const Color(0xFFCCCCCC),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: _agreed
+                        ? Icon(Icons.check,
+                            size: ScreenAdapter.fontSize(22),
+                            color: Colors.white)
+                        : null,
+                  ),
+                  SizedBox(width: ScreenAdapter.width(12)),
+                  Text(
+                    '我已阅读并同意',
+                    style: TextStyle(
+                      fontSize: ScreenAdapter.fontSize(28),
+                      color: const Color(0xFF999999),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => _showServiceAgreementDialog(),
+                    child: Text(
+                      '《服务协议》',
+                      style: TextStyle(
+                        fontSize: ScreenAdapter.fontSize(26),
+                        color: const Color(0xFFE89A3C),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       );
     });
+  }
+
+  /// 服务协议富文本弹窗 - 调用富文本接口，传参 id=8
+  void _showServiceAgreementDialog() {
+    Get.dialog(
+      const _ServiceAgreementDialog(),
+      barrierDismissible: true,
+    );
   }
 
   Widget _buildPayButton() {
@@ -814,7 +877,13 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
       width: ScreenAdapter.width(360),
       height: ScreenAdapter.height(110),
       child: ElevatedButton(
-        onPressed: () => widget.controller.doPay(),
+        onPressed: () {
+          if (!_agreed) {
+            SnackbarUtils.showInfo('请先阅读并同意《服务协议》');
+            return;
+          }
+          widget.controller.doPay();
+        },
         style: ElevatedButton.styleFrom(
           padding: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
@@ -883,6 +952,156 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 服务协议富文本弹窗（全屏）
+///
+/// 调用富文本接口 `common/richtextContent`（id=8）获取 HTML 内容并展示。
+class _ServiceAgreementDialog extends StatefulWidget {
+  const _ServiceAgreementDialog();
+
+  @override
+  State<_ServiceAgreementDialog> createState() =>
+      _ServiceAgreementDialogState();
+}
+
+class _ServiceAgreementDialogState extends State<_ServiceAgreementDialog> {
+  String _content = '';
+  bool _isLoading = true;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchContent();
+  }
+
+  String? _extractText(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    if (value is Map) {
+      return _extractText(
+        value['content'] ?? value['text'] ?? value['value'],
+      );
+    }
+    return null;
+  }
+
+  Future<void> _fetchContent() async {
+    try {
+      final response = await ApiClient.to.get(
+        'addons/exam/common/richtextContent',
+        queryParameters: {'id': 8},
+      );
+      final data = response.data;
+
+      String content = '';
+      if (data is String) {
+        content = data;
+      } else if (data is Map) {
+        final candidate =
+            data['data'] ?? data['content'] ?? data['text'] ?? data;
+        final extracted = _extractText(candidate);
+        content = extracted ?? data.toString();
+      } else {
+        content = data?.toString() ?? '';
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _content = content;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '加载失败：$e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: ScreenAdapter.width(30),
+                vertical: ScreenAdapter.height(20),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '服务协议',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: ScreenAdapter.fontSize(40),
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF333333),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Get.back(),
+                    child: Padding(
+                      padding: EdgeInsets.all(ScreenAdapter.width(10)),
+                      child: Icon(
+                        Icons.close,
+                        color: const Color(0xFF999999),
+                        size: ScreenAdapter.fontSize(48),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFF0F0F0)),
+            Expanded(child: _buildBody()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(
+          color: Color(0xFFE89A3C),
+        ),
+      );
+    }
+    if (_error.isNotEmpty) {
+      return Center(
+        child: Text(
+          _error,
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(30),
+            color: const Color(0xFF999999),
+          ),
+        ),
+      );
+    }
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(
+        horizontal: ScreenAdapter.width(30),
+        vertical: ScreenAdapter.height(30),
+      ),
+      child: HtmlWidget(
+        _content,
+        textStyle: TextStyle(
+          fontSize: ScreenAdapter.fontSize(30),
+          height: 1.6,
+          color: const Color(0xFF333333),
         ),
       ),
     );
