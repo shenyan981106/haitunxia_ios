@@ -301,6 +301,8 @@ class VipCenterView extends GetView<VipCenterController> {
               children: cards,
             ),
           ),
+          SizedBox(height: ScreenAdapter.height(30)),
+          const _PlansRichTextWidget(),
         ],
       );
     });
@@ -1100,6 +1102,122 @@ class _ServiceAgreementDialogState extends State<_ServiceAgreementDialog> {
         _content,
         textStyle: TextStyle(
           fontSize: ScreenAdapter.fontSize(30),
+          height: 1.6,
+          color: const Color(0xFF333333),
+        ),
+      ),
+    );
+  }
+}
+
+/// 会员开通下方富文本内容
+///
+/// 调用富文本接口 `common/richtextContent`（id=6）获取 HTML 内容并展示。
+class _PlansRichTextWidget extends StatefulWidget {
+  const _PlansRichTextWidget();
+
+  @override
+  State<_PlansRichTextWidget> createState() => _PlansRichTextWidgetState();
+}
+
+class _PlansRichTextWidgetState extends State<_PlansRichTextWidget> {
+  String _content = '';
+  bool _isLoading = true;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchContent();
+  }
+
+  String? _extractText(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    if (value is Map) {
+      return _extractText(
+        value['content'] ?? value['text'] ?? value['value'],
+      );
+    }
+    return null;
+  }
+
+  Future<void> _fetchContent() async {
+    try {
+      final response = await ApiClient.to.get(
+        'addons/exam/common/richtextContent',
+        queryParameters: {'id': 6},
+      );
+      final data = response.data;
+
+      String content = '';
+      if (data is String) {
+        content = data;
+      } else if (data is Map) {
+        final candidate =
+            data['data'] ?? data['content'] ?? data['text'] ?? data;
+        final extracted = _extractText(candidate);
+        content = extracted ?? data.toString();
+      } else {
+        content = data?.toString() ?? '';
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _content = content;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '加载失败：$e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(40)),
+          child: const CircularProgressIndicator(
+            color: Color(0xFFE89A3C),
+          ),
+        ),
+      );
+    }
+    if (_error.isNotEmpty) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(40)),
+          child: Text(
+            _error,
+            style: TextStyle(
+              fontSize: ScreenAdapter.fontSize(30),
+              color: const Color(0xFF999999),
+            ),
+          ),
+        ),
+      );
+    }
+    if (_content.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(ScreenAdapter.width(24)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(
+          ScreenAdapter.width(24),
+        ),
+      ),
+      child: HtmlWidget(
+        _content,
+        textStyle: TextStyle(
+          fontSize: ScreenAdapter.fontSize(28),
           height: 1.6,
           color: const Color(0xFF333333),
         ),
