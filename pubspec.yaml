@@ -32,11 +32,11 @@ dependencies:
       ref: main
 
   # === 视频播放 - 鸿蒙平台实现 ===
-  # video_player:
-  #   git:
-  #     url: https://gitcode.com/openharmony-tpc/flutter_packages.git
-  #     path: packages/video_player/video_player
-  #     ref: br_video_player-v2.9.2_ohos
+  video_player:
+    git:
+      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+      path: packages/video_player/video_player
+      ref: br_video_player-v2.9.2_ohos
 
   # === 本地存储和网络（纯 Dart，无需改动）===
   get_storage: ^2.1.1  
@@ -84,11 +84,11 @@ flutter_launcher_icons:
 # === 依赖覆盖 ===
 dependency_overrides:
   # path_provider - 鸿蒙平台使用适配版
-  # path_provider:
-  #   git:
-  #     url: https://gitcode.com/openharmony-tpc/flutter_packages.git
-  #     path: packages/path_provider/path_provider
-  #     ref: br_path_provider-v2.1.4_ohos
+  path_provider:
+    git:
+      url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+      path: packages/path_provider/path_provider
+      ref: br_path_provider-v2.1.4_ohos
 
 flutter: 
   uses-material-design: true
