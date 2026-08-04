@@ -191,9 +191,10 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
       var response = await ApiClient.to.post(
         'addons/exam/pay/pay',
         data: {
-          'member_config_id': memberConfigId,
-          'type': type,
-          'pay_type': type == 'alipay' ? 'app' : 'h5',
+          'order_type': 'member',
+          'order_id': memberConfigId,
+          'pay_type': type,
+          'method': 'app',
         },
       );
 
