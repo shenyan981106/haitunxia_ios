@@ -275,12 +275,15 @@ class LoginController extends GetxController {
   // ==================== 生命周期 ====================
   @override
   void onClose() {
-    // 清理倒计时定时器（防止内存泄漏）
     _countdownTimer?.cancel();
     _countdownTimer = null;
 
-    phoneController.value.dispose();
-    codeController.value.dispose();
+    // 延迟到下一帧再释放，避免 Flutter widget 树卸载过程中访问已释放的 controller
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      phoneController.value.dispose();
+      codeController.value.dispose();
+    });
+
     super.onClose();
   }
 }
