@@ -4,9 +4,8 @@ description: "haitunxia"
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish it to pub.dev
 
-version: 1.0.2 #ios 版本号
-# version: 1.0.1 #android 版本号
-
+# version: 1.0.2 #ios 版本号
+version: 1.0.1 #android 版本号
 environment:
   sdk: '>=3.3.0 <4.0.0'
 
@@ -31,7 +30,14 @@ dependencies:
       url: https://github.com/shenyan981106/Player_Flutter
       path: FlutterWidget/superplayer_widget
       ref: main
-  
+
+  # === 视频播放 - 鸿蒙平台实现 ===
+  # video_player:
+  #   git:
+  #     url: https://gitcode.com/openharmony-tpc/flutter_packages.git
+  #     path: packages/video_player/video_player
+  #     ref: br_video_player-v2.9.2_ohos
+
   # === 本地存储和网络（纯 Dart，无需改动）===
   get_storage: ^2.1.1  
   pin_code_fields: ^8.0.1
@@ -52,12 +58,10 @@ dependencies:
   # === PDF查看插件 ===
   pdf_render:
     git:
-      # url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git
-      url: https://github.com/shenyan981106/fluttertpc_flutter_pdf_render.git
+      url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git
   pdf_render_ohos:
     git:
-      # url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git
-      url: https://github.com/shenyan981106/fluttertpc_flutter_pdf_render.git
+      url: https://gitcode.com/openharmony-sig/fluttertpc_flutter_pdf_render.git
       path: ohos
 
   # === 支付宝支付插件 ===
