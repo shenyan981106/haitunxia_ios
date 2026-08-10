@@ -7,6 +7,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:super_player/super_player.dart';
 import 'package:superplayer_widget/demo_superplayer_lib.dart';
+import 'package:fluwx/fluwx.dart';
 
 import 'app/data/providers/api_client.dart';
 import 'app/data/services/auth_service.dart';
@@ -15,9 +16,24 @@ import 'app/services/global_project_controller.dart';
 import 'app/services/center_the_widgets.dart';
 import 'app/routes/app_pages.dart';
 
+/// 微信AppID，请替换为实际值
+const String kWechatAppId = 'wxec2cc33383f6cc8e';
+
+/// iOS Universal Link，替换为实际值
+const String kWechatUniversalLink = 'https://app.haitunxia.com/';
+
 void main() async {
   // 确保Flutter绑定初始化
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ==================== 微信SDK初始化 ====================
+  final fluwx = Fluwx();
+  await fluwx.registerApi(
+    appId: kWechatAppId,
+    doOnAndroid: true,
+    doOnIOS: true,
+    universalLink: kWechatUniversalLink,
+  );
 
   // 设置状态栏样式
   SystemChrome.setSystemUIOverlayStyle(

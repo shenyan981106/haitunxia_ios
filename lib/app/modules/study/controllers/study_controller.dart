@@ -210,6 +210,7 @@ class StudyController extends GetxController {
   Map<String, dynamic> _buildCourseListParams(int page) {
     final params = <String, dynamic>{
       'page': page,
+      'class_type': 'record',
       '_t': DateTime.now().millisecondsSinceEpoch,
     };
 

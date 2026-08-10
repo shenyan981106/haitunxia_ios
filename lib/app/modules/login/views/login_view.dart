@@ -96,8 +96,7 @@ class LoginView extends GetView<LoginController> {
                                   ),
                                   Expanded(
                                     child: TextField(
-                                      controller:
-                                          controller.phoneController.value,
+                                      controller: controller.phoneController,
                                       keyboardType: TextInputType.phone,
                                       inputFormatters: [
                                         FilteringTextInputFormatter.digitsOnly,
@@ -105,6 +104,8 @@ class LoginView extends GetView<LoginController> {
                                       maxLength: 11,
                                       textAlignVertical:
                                           TextAlignVertical.center,
+                                      onChanged: (v) =>
+                                          controller.phone.value = v,
                                       decoration: InputDecoration(
                                         counterText: '',
                                         hintText: '输入手机号',
@@ -135,8 +136,7 @@ class LoginView extends GetView<LoginController> {
                         SizedBox(height: 80.h),
                         Obx(() {
                           bool isPhoneValid =
-                              controller.phoneController.value.text.length ==
-                                  11;
+                              controller.phone.value.length == 11;
                           return SizedBox(
                             height: 130.h,
                             child: Center(

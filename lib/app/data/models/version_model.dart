@@ -56,13 +56,15 @@ class VersionModel {
       needUpdate: needUpdate,
       newVersion:
           json['newversion']?.toString() ?? json['new_version']?.toString(),
-      oldVersion:
-          json['oldversion']?.toString() ?? json['old_version']?.toString(),
+      oldVersion: json['oldversion']?.toString() ??
+          json['old_version']?.toString() ??
+          json['version']?.toString(),
       packageSize:
           json['packagesize']?.toString() ?? json['package_size']?.toString(),
-      content: json['content']?.toString(),
-      downloadUrl:
-          json['downloadurl']?.toString() ?? json['download_url']?.toString(),
+      content: json['content']?.toString() ?? json['upgradetext']?.toString(),
+      downloadUrl: json['downloadurl']?.toString() ??
+          json['download_url']?.toString() ??
+          json['androidurl']?.toString(),
       iosUrl: json['iosurl']?.toString() ?? json['ios_url']?.toString(),
       ohosUrl: json['ohosurl']?.toString() ?? json['ohos_url']?.toString(),
       enforce: json['enforce'] == 1 ||

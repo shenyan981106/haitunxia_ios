@@ -277,15 +277,8 @@ class StudyView extends GetView<StudyController> {
           centerTitle: true,
           backgroundColor: Colors.white,
           elevation: 0,
-          scrolledUnderElevation: 0, // 防止滚动时颜色变化
-          surfaceTintColor: Colors.transparent, // 防止 Material 3 风格下的表面着色
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back_ios,
-                color: Colors.black, size: ScreenAdapter.fontSize(44)),
-            onPressed: () {
-              Navigator.of(context).pop();
-            },
-          ),
+          scrolledUnderElevation: 0,
+          surfaceTintColor: Colors.transparent,
         ),
         body: Column(
           children: [

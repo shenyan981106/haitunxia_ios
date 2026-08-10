@@ -119,8 +119,7 @@ class VerificationView extends GetView<LoginController> {
                                     height: 100.h,
                                     child: TextField(
                                       focusNode: focusNode,
-                                      controller:
-                                          controller.codeController.value,
+                                      controller: controller.codeController,
                                       keyboardType: TextInputType.number,
                                       maxLength: totalDigits,
                                       textAlign: TextAlign.center,

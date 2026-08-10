@@ -2,6 +2,7 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -35,16 +36,63 @@ class HomeController extends GetxController {
   }
 
   /// 根据当前平台获取对应的更新地址
+  ///
+  /// 鸿蒙平台会自动把 AppGallery https 分享链接（形如
+  /// https://appgallery.huawei.com/app/C123456789）转换为
+  /// store://appgallery.huawei.com/app/detail?id=C123456789，
+  /// 以触发 url_launcher_harmonyos 的 launchAppGallery 分支，
+  /// 直接拉起系统应用市场详情页，而不是通过浏览器中转。
   String? getUpdateUrl(VersionModel model) {
     switch (currentPlatform) {
       case 'ios':
         return model.iosUrl;
       case 'ohos':
-        return model.ohosUrl;
+        return _normalizeOhosUrl(model.ohosUrl);
       case 'android':
       default:
         return model.downloadUrl;
     }
+  }
+
+  /// 将 AppGallery https 分享链接转换为鸿蒙可识别的 store:// scheme
+  ///
+  /// 支持的输入示例（含外层反引号、空格等脏数据，downloadUpdate 内会清理）：
+  /// - https://appgallery.huawei.com/app/C6917612042245117293
+  /// - https://appgallery.cloud.huawei.com/ag/n/app/C6917612042245117293
+  /// - https://appgallery.huawei.com/app/detail?id=C6917612042245117293
+  /// - store://appgallery.huawei.com/app/detail?id=C6917612042245117293 （已正确格式，原样返回）
+  String? _normalizeOhosUrl(String? rawUrl) {
+    if (rawUrl == null) return null;
+    // 先剥掉外层可能的反引号、引号和空白，便于后续正则匹配
+    String url = rawUrl.trim();
+    if (url.startsWith('`') && url.endsWith('`')) {
+      url = url.substring(1, url.length - 1).trim();
+    }
+    if (url.startsWith("'") && url.endsWith("'")) {
+      url = url.substring(1, url.length - 1).trim();
+    }
+    if (url.startsWith('"') && url.endsWith('"')) {
+      url = url.substring(1, url.length - 1).trim();
+    }
+    if (url.isEmpty) return null;
+
+    // 已经是 store:// 格式，直接返回
+    if (url.startsWith('store:')) return url;
+
+    // 尝试从 https 链接中提取 appId
+    // /app/Cxxxxx  或  /app/detail?id=Cxxxxx  或  /ag/n/app/Cxxxxx
+    final appGalleryMatch = RegExp(
+      r'^https?://appgallery(?:\.cloud)?\.huawei\.com(?:/ag/n)?/app/(?:detail\?id=)?([A-Za-z0-9]+)',
+      caseSensitive: false,
+    ).firstMatch(url);
+
+    if (appGalleryMatch != null) {
+      final appId = appGalleryMatch.group(1)!;
+      return 'store://appgallery.huawei.com/app/detail?id=$appId';
+    }
+
+    // 不是 AppGallery 链接（例如普通 APK/企业分发地址），保持原样
+    return url;
   }
 
   /// 当前平台是否可以执行更新操作
@@ -186,9 +234,17 @@ class HomeController extends GetxController {
     _versionChecked = true;
 
     try {
-      // 自动读取 pubspec.yaml 中的版本号
-      final info = await PackageInfo.fromPlatform();
-      _currentVersion = info.version;
+      // 自动读取版本号
+      // 注意: package_info_plus 在鸿蒙(ohos)平台无原生实现，PackageInfo.fromPlatform()
+      // 会抛出 MissingPluginException，需降级从打包的 pubspec.yaml 中读取版本号
+      try {
+        final info = await PackageInfo.fromPlatform();
+        _currentVersion = info.version;
+      } catch (e) {
+        debugPrint('PackageInfo.fromPlatform 失败，降级读取 pubspec.yaml: $e');
+        _currentVersion = await _readVersionFromPubspec();
+      }
+      debugPrint('当前版本: $_currentVersion (平台: $currentPlatform)');
 
       final response = await ApiClient.to.initApp(
         version: _currentVersion,
@@ -230,6 +286,29 @@ class HomeController extends GetxController {
       debugPrint('版本检测失败: $e');
       debugPrint('堆栈: $stackTrace');
     }
+  }
+
+  /// 从打包的 pubspec.yaml 中读取版本号（鸿蒙降级方案）
+  ///
+  /// package_info_plus 无 ohos 原生实现，在鸿蒙设备上调用
+  /// PackageInfo.fromPlatform() 会抛出 MissingPluginException。
+  /// 此方法通过 rootBundle 读取随应用打包的 pubspec.yaml，
+  /// 解析其中的 version 字段作为降级版本号。
+  Future<String> _readVersionFromPubspec() async {
+    try {
+      final pubspecContent = await rootBundle.loadString('pubspec.yaml');
+      // 匹配非注释行的 "version: x.y.z"，忽略 "# version: ..." 注释行
+      final match = RegExp(r'^version:\s*(\S+)', multiLine: true)
+          .firstMatch(pubspecContent);
+      if (match != null) {
+        // 去除行内注释，如 "1.0.1 #android 版本号" -> "1.0.1"
+        final rawVersion = match.group(1)!;
+        return rawVersion.split('#').first.trim();
+      }
+    } catch (e) {
+      debugPrint('读取 pubspec.yaml 版本号失败: $e');
+    }
+    return '1.0.0';
   }
 
   bool _isRemoteVersionNewer(String? remoteVersion, String currentVersion) {
@@ -334,11 +413,13 @@ class HomeController extends GetxController {
     Get.back();
     final uri = Uri.parse(cleanUrl);
     debugPrint('downloadUpdate launching uri: $uri');
-    bool success = await launchUrl(uri, mode: LaunchMode.platformDefault);
-    debugPrint('launchUrl result: $success');
+    // 优先使用 externalApplication：鸿蒙上 platformDefault + https 会走
+    // openUrlInWebView 路径（需要 harmony_browser_page 配置），导致失败
+    bool success = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    debugPrint('launchUrl externalApplication result: $success');
     if (!success) {
-      success = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      debugPrint('launchUrl fallback result: $success');
+      success = await launchUrl(uri, mode: LaunchMode.platformDefault);
+      debugPrint('launchUrl platformDefault fallback result: $success');
     }
     if (!success) {
       Get.snackbar('提示', '无法打开下载链接');

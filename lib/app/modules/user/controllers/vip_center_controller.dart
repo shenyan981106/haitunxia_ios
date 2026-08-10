@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:tobias/tobias.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:fluwx/fluwx.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../services/snackbar_utils.dart';
@@ -20,6 +21,9 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
   final bool enablePayment = true; //屏蔽支付
   bool _isPaying = false;
 
+  final Fluwx _fluwx = Fluwx();
+  FluwxCancelable? _wechatPaySubscription;
+
   @override
   void onInit() {
     super.onInit();
@@ -30,6 +34,8 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
 
   @override
   void onClose() {
+    _wechatPaySubscription?.cancel();
+    _fluwx.clearSubscribers();
     WidgetsBinding.instance.removeObserver(this);
     super.onClose();
   }
@@ -165,7 +171,108 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     return null;
   }
 
-  /// 发起支付（支付宝使用App支付，微信使用H5支付）
+  /// 提取微信App支付参数
+  Map<String, dynamic>? _extractWechatPayParams(dynamic body) {
+    Map<String, dynamic>? params;
+
+    if (body is Map) {
+      params = Map<String, dynamic>.from(body);
+      final dataVal = body['data'];
+      if (dataVal is Map) {
+        params = Map<String, dynamic>.from(dataVal);
+      }
+    }
+
+    if (params == null) return null;
+
+    final appId = params['appId']?.toString() ?? params['appid']?.toString();
+    final partnerId =
+        params['partnerId']?.toString() ?? params['partnerid']?.toString();
+    final prepayId =
+        params['prepayId']?.toString() ?? params['prepayid']?.toString();
+    final packageValue = params['package']?.toString();
+    final nonceStr =
+        params['nonceStr']?.toString() ?? params['noncestr']?.toString();
+    final timestamp =
+        params['timestamp']?.toString() ?? params['timeStamp']?.toString();
+    final sign = params['sign']?.toString();
+
+    if (appId != null &&
+        partnerId != null &&
+        prepayId != null &&
+        nonceStr != null &&
+        timestamp != null &&
+        sign != null) {
+      return {
+        'appId': appId,
+        'partnerId': partnerId,
+        'prepayId': prepayId,
+        'packageValue': packageValue ?? 'Sign=WXPay',
+        'nonceStr': nonceStr,
+        'timeStamp': int.tryParse(timestamp) ?? 0,
+        'sign': sign,
+      };
+    }
+
+    return null;
+  }
+
+  /// 发起微信App支付
+  Future<void> _doWechatAppPay(Map<String, dynamic> params) async {
+    final isInstalled = await _fluwx.isWeChatInstalled;
+    if (!isInstalled) {
+      _isPaying = false;
+      SnackbarUtils.showError('请先安装微信');
+      return;
+    }
+
+    _wechatPaySubscription?.cancel();
+    _wechatPaySubscription = _fluwx.addSubscriber((response) {
+      if (response is WeChatPaymentResponse) {
+        _wechatPaySubscription?.cancel();
+        _isPaying = false;
+
+        if (response.isSuccessful) {
+          SnackbarUtils.showSuccess('支付成功');
+          _fetchMemberConfigs();
+          _refreshUserInfo();
+        } else if (response.errCode == -2) {
+          SnackbarUtils.showInfo('支付已取消');
+        } else {
+          SnackbarUtils.showError(
+            '支付失败：${response.errStr ?? '未知错误'}(${response.errCode})',
+          );
+        }
+      }
+    });
+
+    try {
+      final result = await _fluwx.pay(
+        which: Payment(
+          appId: params['appId']!,
+          partnerId: params['partnerId']!,
+          prepayId: params['prepayId']!,
+          packageValue: params['packageValue']!,
+          nonceStr: params['nonceStr']!,
+          timestamp: params['timeStamp']! as int,
+          sign: params['sign']!,
+        ),
+      );
+
+      if (kDebugMode) {
+        debugPrint('微信支付调起结果: $result');
+      }
+    } catch (e) {
+      _isPaying = false;
+      _wechatPaySubscription?.cancel();
+      if (kDebugMode) {
+        debugPrint('调起微信支付失败: $e');
+      }
+      SnackbarUtils.showError('调起微信失败：${e.toString()}');
+    }
+  }
+
+  /// 发起支付（支付宝使用App支付，微信使用App支付）
   Future<void> doPay() async {
     if (!enablePayment) {
       SnackbarUtils.showInfo('请联系客服');
@@ -257,26 +364,37 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
         }
 
         if (type == 'wechat') {
-          final payUrl = body is String
-              ? body
-              : (body is Map
-                  ? body['payUrl']?.toString() ?? body['url']?.toString()
-                  : null);
+          final wechatParams = _extractWechatPayParams(body);
 
-          if (payUrl != null && payUrl.isNotEmpty) {
-            final uri = Uri.parse(payUrl);
-            if (await canLaunchUrl(uri)) {
-              await launchUrl(
-                uri,
-                mode: LaunchMode.externalApplication,
-              );
-            } else {
-              _isPaying = false;
-              SnackbarUtils.showError('无法打开支付页面');
-            }
+          if (kDebugMode) {
+            debugPrint('微信支付响应: $body');
+            debugPrint('解析后的支付参数: $wechatParams');
+          }
+
+          if (wechatParams != null) {
+            await _doWechatAppPay(wechatParams);
           } else {
             _isPaying = false;
-            SnackbarUtils.showInfo('微信支付开发中');
+
+            final payUrl = body is String
+                ? body
+                : (body is Map
+                    ? body['payUrl']?.toString() ?? body['url']?.toString()
+                    : null);
+
+            if (payUrl != null && payUrl.isNotEmpty) {
+              final uri = Uri.parse(payUrl);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(
+                  uri,
+                  mode: LaunchMode.externalApplication,
+                );
+              } else {
+                SnackbarUtils.showError('无法打开支付页面');
+              }
+            } else {
+              SnackbarUtils.showError('获取微信支付参数失败');
+            }
           }
         }
       }

@@ -15,10 +15,14 @@ import '../../../utils/api_error_handler.dart';
 /// 负责：手机号输入验证、发送验证码、验证码登录
 class LoginController extends GetxController {
   // ==================== 控制器 ====================
-  final phoneController = TextEditingController().obs;
-  final codeController = TextEditingController().obs;
+  // 注意：TextEditingController 自身已具备通知机制，不要再包成 Rx。
+  // 之前用 Rx<TextEditingController> 会在 onClose dispose 后仍返回已释放的实例，
+  // 导致新页面绑到已 dispose 的控制器，出现输入框乱码 / 无响应 / 样式错乱。
+  final phoneController = TextEditingController();
+  final codeController = TextEditingController();
 
   // ==================== 状态 ====================
+  final phone = ''.obs; // 手机号（响应式，驱动按钮状态）
   final verificationCode = ''.obs; // 验证码输入
   final isLoading = false.obs; // 加载状态
   final isCountingDown = false.obs; // 倒计时状态
@@ -31,10 +35,10 @@ class LoginController extends GetxController {
   // ==================== 发送验证码 ====================
   /// 发送验证码（API: addons/exam/user/sendCode）
   Future<void> sendVerificationCode() async {
-    final phone = phoneController.value.text.trim();
+    final phoneNumber = phoneController.text.trim();
 
     // 1. 验证手机号格式（使用统一验证器）
-    final phoneError = Validators.validatePhone(phone);
+    final phoneError = Validators.validatePhone(phoneNumber);
     if (phoneError != null) {
       SnackbarUtils.showError(phoneError);
       return;
@@ -42,27 +46,27 @@ class LoginController extends GetxController {
 
     // 2. 检查是否同意协议
     if (!isAgreed.value) {
-      _showAgreementSheet(phone);
+      _showAgreementSheet(phoneNumber);
       return;
     }
 
-    await _doSendVerification(phone);
+    await _doSendVerification(phoneNumber);
   }
 
   /// 实际发送验证码请求
-  Future<void> _doSendVerification(String phone) async {
+  Future<void> _doSendVerification(String phoneNumber) async {
     try {
       isLoading.value = true;
 
       // 调用发送验证码接口
       debugPrint('========== 发送验证码请求参数 ==========');
-      debugPrint('手机号: $phone');
+      debugPrint('手机号: $phoneNumber');
       debugPrint('event: mobilelogin');
       debugPrint('=======================================');
 
       final response = await ApiClient.to.post(
         'addons/exam/user/sendCode',
-        data: {'mobile': phone, 'event': 'mobilelogin'},
+        data: {'mobile': phoneNumber, 'event': 'mobilelogin'},
       );
 
       // FastAdmin 标准响应格式判断
@@ -92,7 +96,7 @@ class LoginController extends GetxController {
   /// 验证码登录（API: addons/exam/user/appLogin）
   /// 验证通过后保存Token并跳转首页
   Future<void> login() async {
-    final phone = phoneController.value.text.trim();
+    final phoneNumber = phoneController.text.trim();
     final code = verificationCode.value.trim();
 
     // 1. 验证验证码（使用统一验证器）
@@ -108,7 +112,7 @@ class LoginController extends GetxController {
       // 调用登录验证接口
       final response = await ApiClient.to.post(
         'addons/exam/user/appLogin',
-        data: {'mobile': phone, 'code': code},
+        data: {'mobile': phoneNumber, 'code': code},
       );
 
       if (response.statusCode == 200) {
@@ -179,7 +183,7 @@ class LoginController extends GetxController {
 
   // ==================== 协议弹窗 ====================
   /// 显示协议确认弹窗
-  void _showAgreementSheet(String phone) {
+  void _showAgreementSheet(String phoneNumber) {
     Get.dialog(
       Center(
         child: Material(
@@ -249,7 +253,7 @@ class LoginController extends GetxController {
                         onPressed: () {
                           isAgreed.value = true;
                           Get.back();
-                          _doSendVerification(phone);
+                          _doSendVerification(phoneNumber);
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0164E5),
@@ -278,11 +282,10 @@ class LoginController extends GetxController {
     _countdownTimer?.cancel();
     _countdownTimer = null;
 
-    // 延迟到下一帧再释放，避免 Flutter widget 树卸载过程中访问已释放的 controller
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      phoneController.value.dispose();
-      codeController.value.dispose();
-    });
+    // 直接释放即可。之前用 Rx 包裹时才需要 postFrame 延迟（反而拉长了
+    // "控制器已释放但视图仍挂载"的窗口）；改成普通字段后这是标准做法。
+    phoneController.dispose();
+    codeController.dispose();
 
     super.onClose();
   }
