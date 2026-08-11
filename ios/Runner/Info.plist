@@ -24,6 +24,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>用于拍摄商品照片或扫码功能，以便您快速发布商品信息。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>用于选择头像或反馈截图，以便您更新个人资料或提交问题反馈。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>用于保存图片到您的相册。</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>LSApplicationQueriesSchemes</key>
@@ -32,6 +36,9 @@
 		<string>alipays</string>
 		<string>http</string>
 		<string>https</string>
+		<string>weixin</string>
+		<string>weixinULAPI</string>
+		<string>weixinURLParamsAPI</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
@@ -64,6 +71,16 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>alipayks</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>weixin</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wxec2cc33383f6cc8e</string>
 			</array>
 		</dict>
 	</array>
