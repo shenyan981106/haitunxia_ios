@@ -4,7 +4,7 @@ description: "haitunxia"
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish it to pub.dev
 
-version: 1.0.2 #android 版本号
+version: 1.0.4
 environment:
   sdk: '>=3.3.0 <4.0.0'
 
