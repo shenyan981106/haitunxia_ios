@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dio/dio.dart';
+import 'package:fluwx/fluwx.dart';
+import 'package:tobias/tobias.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../services/screenAdapter.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../services/snackbar_utils.dart';
@@ -25,6 +29,10 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
   final addressController = TextEditingController();
   final List<Map<String, dynamic>> _payMethods = [];
   bool _isLoadingPayMethods = true;
+  bool _isPaying = false;
+
+  final Fluwx _fluwx = Fluwx();
+  FluwxCancelable? _wechatPaySubscription;
 
   @override
   void initState() {
@@ -34,6 +42,7 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
 
   @override
   void dispose() {
+    _wechatPaySubscription?.cancel();
     nameController.dispose();
     phoneController.dispose();
     addressController.dispose();
@@ -483,9 +492,9 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
       child: SafeArea(
         top: false,
         child: ElevatedButton(
-          onPressed: _handleSubmit,
+          onPressed: _isPaying ? null : _handleSubmit,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Color(0xFF3D7CFF),
+            backgroundColor: _isPaying ? Color(0xFFCCCCCC) : Color(0xFF3D7CFF),
             foregroundColor: Colors.white,
             padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(28)),
             shape: RoundedRectangleBorder(
@@ -493,13 +502,22 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
             ),
             elevation: 0,
           ),
-          child: Text(
-            '确认购买 \u00A5$price',
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(38),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          child: _isPaying
+              ? SizedBox(
+                  height: ScreenAdapter.fontSize(36),
+                  width: ScreenAdapter.fontSize(36),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(
+                  '确认购买 \u00A5$price',
+                  style: TextStyle(
+                    fontSize: ScreenAdapter.fontSize(38),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
         ),
       ),
     );
@@ -508,6 +526,7 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
   void _handleSubmit() {
     final name = nameController.text.trim();
     final phone = phoneController.text.trim();
+    final address = addressController.text.trim();
 
     if (name.isEmpty) {
       SnackbarUtils.showError('请输入收货人姓名');
@@ -521,16 +540,322 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
       SnackbarUtils.showError('请输入正确的11位手机号码');
       return;
     }
+    if (address.isEmpty) {
+      SnackbarUtils.showError('请输入收货地址');
+      return;
+    }
     if (selectedPayment.isEmpty) {
       SnackbarUtils.showError('请选择支付方式');
       return;
     }
 
-    final payMethod = _payMethods.firstWhere(
-      (m) => m['code']?.toString() == selectedPayment,
-      orElse: () => <String, dynamic>{'name': '默认'},
-    );
-    final payName = payMethod['name']?.toString() ?? '默认支付';
-    SnackbarUtils.showInfo('已选择$payName支付，订单已提交');
+    _submitPay(name, phone, address);
+  }
+
+  Future<void> _submitPay(String name, String phone, String address) async {
+    if (_isPaying) return;
+
+    final courseId = widget.courseData['id']?.toString();
+    if (courseId == null || courseId.isEmpty) {
+      SnackbarUtils.showError('课程信息异常');
+      return;
+    }
+
+    setState(() {
+      _isPaying = true;
+    });
+
+    try {
+      SnackbarUtils.showInfo('正在发起支付...');
+
+      final response = await ApiClient.to.post(
+        'addons/exam/pay/pay',
+        data: {
+          'order_type': 'course',
+          'order_id': courseId,
+          'pay_type': selectedPayment,
+          'method': 'app',
+          'extra_params': {
+            'name': name,
+            'phone': phone,
+            'address': address,
+          },
+        },
+      );
+
+      if (response.data != null) {
+        final body = response.data;
+        final type = selectedPayment;
+
+        if (type == 'alipay') {
+          await _doAlipayPay(body);
+        } else if (type == 'wechat') {
+          await _doWechatPay(body);
+        }
+      }
+    } on DioException catch (e) {
+      if (mounted) {
+        setState(() {
+          _isPaying = false;
+        });
+      }
+      ApiErrorHandler.handleDioError(e, fallbackMessage: '支付请求失败');
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isPaying = false;
+        });
+      }
+      ApiErrorHandler.handleError(e, fallbackMessage: '支付失败');
+    }
+  }
+
+  /// 支付宝支付
+  Future<void> _doAlipayPay(dynamic body) async {
+    final orderString = _extractAlipayOrderString(body);
+    if (kDebugMode) {
+      debugPrint('支付宝支付响应: $body');
+      debugPrint('解析后的订单字符串: $orderString');
+    }
+
+    if (orderString != null && orderString.isNotEmpty) {
+      final Tobias tobias = Tobias();
+      try {
+        final payResult = await tobias.pay(orderString);
+        if (mounted) {
+          setState(() {
+            _isPaying = false;
+          });
+        }
+        if (kDebugMode) {
+          debugPrint('支付宝支付结果: $payResult');
+        }
+        final resultStatus = payResult['resultStatus']?.toString();
+        if (resultStatus == '9000') {
+          SnackbarUtils.showSuccess('支付成功');
+          Get.back(result: true);
+        } else if (resultStatus == '6001') {
+          SnackbarUtils.showInfo('支付已取消');
+        } else if (resultStatus == '4000') {
+          SnackbarUtils.showError('支付失败');
+        } else {
+          SnackbarUtils.showError('支付结果：${payResult['memo'] ?? '未知状态'}');
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isPaying = false;
+          });
+        }
+        if (kDebugMode) {
+          debugPrint('调起支付宝失败: $e');
+        }
+        SnackbarUtils.showError('调起支付宝失败：${e.toString()}');
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isPaying = false;
+        });
+      }
+      final payUrl = body is Map
+          ? body['payUrl']?.toString() ?? body['url']?.toString()
+          : null;
+      if (payUrl != null && payUrl.isNotEmpty) {
+        final uri = Uri.parse(payUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          SnackbarUtils.showError('无法打开支付页面');
+        }
+      } else {
+        SnackbarUtils.showError('获取支付参数失败');
+      }
+    }
+  }
+
+  /// 微信支付
+  Future<void> _doWechatPay(dynamic body) async {
+    final wechatParams = _extractWechatPayParams(body);
+
+    if (kDebugMode) {
+      debugPrint('微信支付响应: $body');
+      debugPrint('解析后的支付参数: $wechatParams');
+    }
+
+    if (wechatParams != null) {
+      await _doWechatAppPay(wechatParams);
+    } else {
+      if (mounted) {
+        setState(() {
+          _isPaying = false;
+        });
+      }
+      final payUrl = body is String
+          ? body
+          : (body is Map
+              ? body['payUrl']?.toString() ?? body['url']?.toString()
+              : null);
+
+      if (payUrl != null && payUrl.isNotEmpty) {
+        final uri = Uri.parse(payUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          SnackbarUtils.showError('无法打开支付页面');
+        }
+      } else {
+        SnackbarUtils.showError('获取微信支付参数失败');
+      }
+    }
+  }
+
+  /// 提取支付宝订单字符串
+  String? _extractAlipayOrderString(dynamic body) {
+    if (body is String && body.isNotEmpty) {
+      return body;
+    }
+
+    if (body is Map) {
+      final orderKeys = [
+        'orderString',
+        'order_info',
+        'orderInfo',
+        'pay_order_info',
+      ];
+      for (final key in orderKeys) {
+        final val = body[key];
+        if (val is String && val.isNotEmpty && val.contains('=')) {
+          return val;
+        }
+      }
+
+      final dataVal = body['data'];
+      if (dataVal is String && dataVal.isNotEmpty && dataVal.contains('=')) {
+        return dataVal;
+      }
+      if (dataVal is Map) {
+        for (final key in orderKeys) {
+          final val = dataVal[key];
+          if (val is String && val.isNotEmpty && val.contains('=')) {
+            return val;
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /// 提取微信App支付参数
+  Map<String, dynamic>? _extractWechatPayParams(dynamic body) {
+    Map<String, dynamic>? params;
+
+    if (body is Map) {
+      params = Map<String, dynamic>.from(body);
+      final dataVal = body['data'];
+      if (dataVal is Map) {
+        params = Map<String, dynamic>.from(dataVal);
+      }
+    }
+
+    if (params == null) return null;
+
+    final appId = params['appId']?.toString() ?? params['appid']?.toString();
+    final partnerId =
+        params['partnerId']?.toString() ?? params['partnerid']?.toString();
+    final prepayId =
+        params['prepayId']?.toString() ?? params['prepayid']?.toString();
+    final packageValue = params['package']?.toString();
+    final nonceStr =
+        params['nonceStr']?.toString() ?? params['noncestr']?.toString();
+    final timestamp =
+        params['timestamp']?.toString() ?? params['timeStamp']?.toString();
+    final sign = params['sign']?.toString();
+
+    if (appId != null &&
+        partnerId != null &&
+        prepayId != null &&
+        nonceStr != null &&
+        timestamp != null &&
+        sign != null) {
+      return {
+        'appId': appId,
+        'partnerId': partnerId,
+        'prepayId': prepayId,
+        'packageValue': packageValue ?? 'Sign=WXPay',
+        'nonceStr': nonceStr,
+        'timeStamp': int.tryParse(timestamp) ?? 0,
+        'sign': sign,
+      };
+    }
+
+    return null;
+  }
+
+  /// 发起微信App支付
+  Future<void> _doWechatAppPay(Map<String, dynamic> params) async {
+    final isInstalled = await _fluwx.isWeChatInstalled;
+    if (!isInstalled) {
+      if (mounted) {
+        setState(() {
+          _isPaying = false;
+        });
+      }
+      SnackbarUtils.showError('请先安装微信');
+      return;
+    }
+
+    _wechatPaySubscription?.cancel();
+    _wechatPaySubscription = _fluwx.addSubscriber((response) {
+      if (response is WeChatPaymentResponse) {
+        _wechatPaySubscription?.cancel();
+        if (mounted) {
+          setState(() {
+            _isPaying = false;
+          });
+        }
+
+        if (response.isSuccessful) {
+          SnackbarUtils.showSuccess('支付成功');
+          Get.back(result: true);
+        } else if (response.errCode == -2) {
+          SnackbarUtils.showInfo('支付已取消');
+        } else {
+          SnackbarUtils.showError(
+            '支付失败：${response.errStr ?? '未知错误'}(${response.errCode})',
+          );
+        }
+      }
+    });
+
+    try {
+      final result = await _fluwx.pay(
+        which: Payment(
+          appId: params['appId']!,
+          partnerId: params['partnerId']!,
+          prepayId: params['prepayId']!,
+          packageValue: params['packageValue']!,
+          nonceStr: params['nonceStr']!,
+          timestamp: params['timeStamp']! as int,
+          sign: params['sign']!,
+        ),
+      );
+
+      if (kDebugMode) {
+        debugPrint('微信支付调起结果: $result');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isPaying = false;
+        });
+      }
+      _wechatPaySubscription?.cancel();
+      if (kDebugMode) {
+        debugPrint('调起微信支付失败: $e');
+      }
+      SnackbarUtils.showError('调起微信支付失败：${e.toString()}');
+    }
   }
 }

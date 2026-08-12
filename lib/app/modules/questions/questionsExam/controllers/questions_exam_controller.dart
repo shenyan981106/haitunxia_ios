@@ -69,6 +69,14 @@ class QuestionsExamController extends GetxController {
   // 试卷加载状态 Map<subjectId, bool>
   RxMap<int, bool> isExamLoadingMap = <int, bool>{}.obs;
 
+  // === 分页状态（按 subjectId 隔离）===
+  RxMap<int, int> examPageMap = <int, int>{}.obs; // 当前页码
+  RxMap<int, bool> examHasMoreMap = <int, bool>{}.obs; // 是否还有更多
+  RxMap<int, bool> examIsLoadingMoreMap = <int, bool>{}.obs; // 上拉加载中
+  RxMap<int, String> examLoadErrorMap = <int, String>{}.obs; // 加载失败信息
+  final Map<int, ScrollController> _scrollControllers = {}; // 每科目一个
+  static const int _pageSize = 15;
+
   @override
   void onInit() {
     super.onInit();
@@ -126,28 +134,59 @@ class QuestionsExamController extends GetxController {
     });
   }
 
-  // 获取试卷列表
+  // 获取试卷列表（首次加载 / 刷新入口；保持原签名兼容现有调用点）
   Future<void> fetchExamPapers(int subjectId) async {
     // 如果正在加载，则忽略
     if (isExamLoadingMap[subjectId] == true) return;
+    return refreshExamPapers(subjectId);
+  }
+
+  // 下拉刷新 / 首次加载：拉取第 1 页
+  Future<void> refreshExamPapers(int subjectId) async {
+    if (isExamLoadingMap[subjectId] == true) return;
 
     isExamLoadingMap[subjectId] = true;
+    examLoadErrorMap[subjectId] = '';
 
     try {
-      // 调用 paper/index 接口，传递 subject_id 参数
-      final response = await ApiClient.to
-          .getExam('paper/index', queryParameters: {'subject_id': subjectId});
+      // 调用 paper/index 接口，传递 subject_id + 分页参数
+      final response =
+          await ApiClient.to.getExam('paper/index', queryParameters: {
+        'subject_id': subjectId,
+        'page': 1,
+        'limit': _pageSize,
+      });
 
       if (response.statusCode == 200) {
         final data = response.data;
         if (data['code'] == 1) {
-          final listData = data['data']['list']['data'];
-          if (listData != null && listData is List) {
-            examPapersMap[subjectId] =
-                List<Map<String, dynamic>>.from(listData);
+          final dataBlock = data['data'];
+          final listObj = dataBlock is Map ? dataBlock['list'] : null;
+          final total = dataBlock is Map ? dataBlock['total'] : null;
+
+          List<dynamic> listData;
+          bool hasMore;
+          if (listObj is List) {
+            // 后端分页结构：data.list 是本页数组，data.total 是总数
+            listData = listObj;
+            final loaded = listData.length;
+            if (total is num) {
+              hasMore = loaded < total;
+            } else {
+              hasMore = false; // 无 total 则当作全量
+            }
+          } else if (listObj is Map) {
+            // FastAdmin 分页结构：list.data 为本页数据
+            listData = listObj['data'] ?? [];
+            hasMore = _computeHasMore(listObj, subjectId);
           } else {
-            examPapersMap[subjectId] = [];
+            listData = [];
+            hasMore = false;
           }
+          examPapersMap[subjectId] =
+              listData.map((e) => Map<String, dynamic>.from(e)).toList();
+          examPageMap[subjectId] = 1;
+          examHasMoreMap[subjectId] = hasMore;
         }
       }
     } catch (e) {
@@ -156,8 +195,107 @@ class QuestionsExamController extends GetxController {
       if (!examPapersMap.containsKey(subjectId)) {
         examPapersMap[subjectId] = [];
       }
+      examHasMoreMap[subjectId] = false;
     } finally {
       isExamLoadingMap[subjectId] = false;
+    }
+  }
+
+  // 上拉加载更多：拉取下一页并追加
+  Future<void> loadMoreExamPapers(int subjectId) async {
+    if (isExamLoadingMap[subjectId] == true) return;
+    if (examIsLoadingMoreMap[subjectId] == true) return;
+    if (examHasMoreMap[subjectId] == false) return;
+
+    examIsLoadingMoreMap[subjectId] = true;
+    examLoadErrorMap[subjectId] = '';
+
+    final nextPage = (examPageMap[subjectId] ?? 1) + 1;
+
+    try {
+      final response =
+          await ApiClient.to.getExam('paper/index', queryParameters: {
+        'subject_id': subjectId,
+        'page': nextPage,
+        'limit': _pageSize,
+      });
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data['code'] == 1) {
+          final dataBlock = data['data'];
+          final listObj = dataBlock is Map ? dataBlock['list'] : null;
+          final total = dataBlock is Map ? dataBlock['total'] : null;
+
+          List<dynamic> listData;
+          bool hasMore;
+          if (listObj is List) {
+            // 后端分页结构：data.list 是本页新增数据
+            listData = listObj;
+            final existingCount = (examPapersMap[subjectId]?.length) ?? 0;
+            final newCount = listData.length;
+            if (total is num) {
+              hasMore = (existingCount + newCount) < total;
+            } else {
+              hasMore = false;
+            }
+          } else if (listObj is Map) {
+            listData = listObj['data'] ?? [];
+            hasMore = _computeHasMore(listObj, subjectId);
+          } else {
+            listData = const [];
+            hasMore = false;
+          }
+          final newItems =
+              listData.map((e) => Map<String, dynamic>.from(e)).toList();
+
+          final existing = examPapersMap[subjectId] ?? [];
+          examPapersMap[subjectId] = [...existing, ...newItems];
+          examPageMap[subjectId] = nextPage;
+          examHasMoreMap[subjectId] = hasMore;
+        }
+      }
+    } catch (e) {
+      print('Load more exam papers error: $e');
+      examLoadErrorMap[subjectId] = '加载失败，点击重试';
+    } finally {
+      examIsLoadingMoreMap[subjectId] = false;
+    }
+  }
+
+  // 根据分页元数据判断是否还有更多
+  bool _computeHasMore(dynamic listObj, int subjectId) {
+    if (listObj is! Map) return false;
+    final currentPage = listObj['current_page'];
+    final lastPage = listObj['last_page'];
+    if (currentPage is num && lastPage is num) {
+      return currentPage < lastPage;
+    }
+    // 兜底：用 total 判断
+    final total = listObj['total'];
+    final loaded = (examPapersMap[subjectId]?.length) ?? 0;
+    if (total is num) {
+      return loaded < total;
+    }
+    return false;
+  }
+
+  // 获取（懒创建）某科目的 ScrollController
+  ScrollController getScrollController(int subjectId) {
+    if (!_scrollControllers.containsKey(subjectId)) {
+      final sc = ScrollController();
+      sc.addListener(() => _onScroll(subjectId));
+      _scrollControllers[subjectId] = sc;
+    }
+    return _scrollControllers[subjectId]!;
+  }
+
+  // 滚动接近底部时触发加载更多
+  void _onScroll(int subjectId) {
+    final sc = _scrollControllers[subjectId];
+    if (sc == null || !sc.hasClients) return;
+    if (sc.position.pixels >= sc.position.maxScrollExtent - 200) {
+      loadMoreExamPapers(subjectId);
     }
   }
 
@@ -231,6 +369,10 @@ class QuestionsExamController extends GetxController {
   @override
   void onClose() {
     pageController.dispose();
+    for (final sc in _scrollControllers.values) {
+      sc.dispose();
+    }
+    _scrollControllers.clear();
     super.onClose();
   }
 

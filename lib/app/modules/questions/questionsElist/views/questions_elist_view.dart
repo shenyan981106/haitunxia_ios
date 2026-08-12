@@ -167,16 +167,79 @@ class QuestionsElistView extends GetView<QuestionsElistController> {
         );
       }
 
-      return ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.only(top: 24.h, bottom: bottomSafeSpace),
-        itemCount: controller.examPapers.length,
-        itemBuilder: (context, index) {
-          final paper = controller.examPapers[index];
-          return _buildPaperItem(paper);
-        },
+      return RefreshIndicator(
+        color: const Color(0xFF1890FF),
+        onRefresh: () => controller.onRefresh(),
+        child: ListView.builder(
+          controller: controller.scrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.only(top: 24.h, bottom: bottomSafeSpace),
+          itemCount: controller.examPapers.length + 1,
+          itemBuilder: (context, index) {
+            if (index == controller.examPapers.length) {
+              return _buildListFooter();
+            }
+            final paper = controller.examPapers[index];
+            return _buildPaperItem(paper);
+          },
+        ),
       );
     });
+  }
+
+  // 列表底部 footer：加载中 / 没有更多 / 加载失败点击重试
+  Widget _buildListFooter() {
+    if (controller.loadError.isNotEmpty) {
+      return GestureDetector(
+        onTap: () => controller.loadMoreExamPapers(),
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 24.h),
+          child: Center(
+            child: Text(
+              controller.loadError,
+              style: TextStyle(
+                fontSize: 26.sp,
+                color: const Color(0xFF1890FF),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (controller.isLoadingMore) {
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: 24.h),
+        child: const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1890FF)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (!controller.hasMore) {
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: 24.h),
+        child: Center(
+          child: Text(
+            '没有更多了',
+            style: TextStyle(
+              fontSize: 26.sp,
+              color: Colors.grey,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 
   Widget _buildPaperItem(Map<String, dynamic> paper) {

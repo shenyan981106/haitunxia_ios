@@ -317,6 +317,10 @@ class QuestionsExamView extends GetView<QuestionsExamController> {
       final subjectId = subject.id;
       final isLoading = controller.isExamLoadingMap[subjectId] ?? false;
       final examPapers = controller.examPapersMap[subjectId] ?? [];
+      final isLoadingMore =
+          controller.examIsLoadingMoreMap[subjectId] ?? false;
+      final hasMore = controller.examHasMoreMap[subjectId] ?? false;
+      final loadError = controller.examLoadErrorMap[subjectId] ?? '';
 
       if (isLoading && examPapers.isEmpty) {
         return const Center(child: CircularProgressIndicator());
@@ -334,157 +338,234 @@ class QuestionsExamView extends GetView<QuestionsExamController> {
         );
       }
 
-      return ListView.builder(
-        padding: EdgeInsets.symmetric(
-          horizontal: ScreenAdapter.width(32),
-          vertical: ScreenAdapter.height(24),
-        ),
-        itemCount: examPapers.length,
-        itemBuilder: (context, index) {
-          final paper = examPapers[index];
-          return GestureDetector(
-            onTap: () {
-              // 解析 configs 获取实际的题目分类ID
-              var cateId = paper['id']; // 默认使用paper id
-              try {
-                final configs = paper['configs'];
-                if (configs is Map) {
-                  final configCateIds = configs['cate_ids'];
-                  if (configCateIds != null &&
-                      configCateIds.toString().isNotEmpty) {
-                    cateId = configCateIds;
-                  }
-                }
-              } catch (e) {
-                print('Error parsing paper configs: $e');
-              }
+      return RefreshIndicator(
+        color: const Color(0xFF1890FF),
+        onRefresh: () => controller.refreshExamPapers(subjectId),
+        child: ListView.builder(
+          controller: controller.getScrollController(subjectId),
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.symmetric(
+            horizontal: ScreenAdapter.width(32),
+            vertical: ScreenAdapter.height(24),
+          ),
+          itemCount: examPapers.length + 1,
+          itemBuilder: (context, index) {
+            // 最后一项为 footer
+            if (index == examPapers.length) {
+              return _buildListFooter(
+                isLoadingMore: isLoadingMore,
+                hasMore: hasMore,
+                loadError: loadError,
+                onRetry: () => controller.loadMoreExamPapers(subjectId),
+              );
+            }
 
-              // 跳转到考试详情或答题页
-              Get.toNamed('/question-train', arguments: {
-                'mode': 'EXAM',
-                'cate_id': cateId,
-                'paper_id': paper['id'],
-                'limit_time': paper['limit_time'],
-                'title': paper['title'],
-                'join_count': paper['join_count'],
-                'total_score': paper['total_score'],
-                'pass_score': paper['pass_score'],
-              });
-            },
-            child: Container(
-              margin: EdgeInsets.only(bottom: ScreenAdapter.height(24)),
-              padding: EdgeInsets.all(ScreenAdapter.width(24)),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(ScreenAdapter.width(16)),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0x0D000000),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // 封面图片
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(ScreenAdapter.width(8)),
-                    child: CachedNetworkImage(
-                      imageUrl: paper['cover_image'] ?? '',
-                      width: ScreenAdapter.width(160),
-                      height: ScreenAdapter.width(160),
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        color: Colors.grey[200],
-                        child: const Icon(Icons.image, color: Colors.grey),
-                      ),
-                      errorWidget: (context, url, error) => Container(
-                        color: Colors.grey[200],
-                        child:
-                            const Icon(Icons.broken_image, color: Colors.grey),
-                      ),
+            final paper = examPapers[index];
+            return GestureDetector(
+              onTap: () {
+                // 解析 configs 获取实际的题目分类ID
+                var cateId = paper['id']; // 默认使用paper id
+                try {
+                  final configs = paper['configs'];
+                  if (configs is Map) {
+                    final configCateIds = configs['cate_ids'];
+                    if (configCateIds != null &&
+                        configCateIds.toString().isNotEmpty) {
+                      cateId = configCateIds;
+                    }
+                  }
+                } catch (e) {
+                  print('Error parsing paper configs: $e');
+                }
+
+                // 跳转到考试详情或答题页
+                Get.toNamed('/question-train', arguments: {
+                  'mode': 'EXAM',
+                  'cate_id': cateId,
+                  'paper_id': paper['id'],
+                  'limit_time': paper['limit_time'],
+                  'title': paper['title'],
+                  'join_count': paper['join_count'],
+                  'total_score': paper['total_score'],
+                  'pass_score': paper['pass_score'],
+                });
+              },
+              child: Container(
+                margin: EdgeInsets.only(bottom: ScreenAdapter.height(24)),
+                padding: EdgeInsets.all(ScreenAdapter.width(24)),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(ScreenAdapter.width(16)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0x0D000000),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
                     ),
-                  ),
-                  SizedBox(width: ScreenAdapter.width(24)),
-                  // 内容
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          paper['title'] ?? '',
-                          style: TextStyle(
-                            fontSize: ScreenAdapter.fontSize(32),
-                            fontWeight: FontWeight.w500,
-                            color: const Color(0xFF333333),
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        SizedBox(height: ScreenAdapter.height(16)),
-                        Row(
-                          children: [
-                            _buildTag(
-                                '${paper['quantity'] ?? 0}题',
-                                const Color(0xFFE8F3FF),
-                                const Color(0xFF3A7FFF)),
-                            SizedBox(width: ScreenAdapter.width(16)),
-                            _buildTag(
-                                '${(paper['limit_time'] ?? 0) ~/ 60}分钟',
-                                const Color(0xFFFFF7E8),
-                                const Color(0xFFFF9900)),
-                          ],
-                        ),
-                        SizedBox(height: ScreenAdapter.height(12)),
-                        Row(
-                          children: [
-                            Text(
-                              '${paper['join_count'] ?? 0}人已报名',
-                              style: TextStyle(
-                                fontSize: ScreenAdapter.fontSize(22),
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            SizedBox(width: ScreenAdapter.width(16)),
-                            Text(
-                              '总分: ${paper['total_score'] ?? 0}',
-                              style: TextStyle(
-                                fontSize: ScreenAdapter.fontSize(22),
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  // 开始考试按钮
-                  Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: ScreenAdapter.width(24),
-                      vertical: ScreenAdapter.height(12),
-                    ),
-                    decoration: BoxDecoration(
-                      color: controller.defaultThemeColor,
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    // 封面图片
+                    ClipRRect(
                       borderRadius:
-                          BorderRadius.circular(ScreenAdapter.width(30)),
-                    ),
-                    child: Text(
-                      '开始考试',
-                      style: TextStyle(
-                        fontSize: ScreenAdapter.fontSize(24),
-                        color: Colors.white,
+                          BorderRadius.circular(ScreenAdapter.width(8)),
+                      child: CachedNetworkImage(
+                        imageUrl: paper['cover_image'] ?? '',
+                        width: ScreenAdapter.width(160),
+                        height: ScreenAdapter.width(160),
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.image, color: Colors.grey),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.broken_image,
+                              color: Colors.grey),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    SizedBox(width: ScreenAdapter.width(24)),
+                    // 内容
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            paper['title'] ?? '',
+                            style: TextStyle(
+                              fontSize: ScreenAdapter.fontSize(32),
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF333333),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          SizedBox(height: ScreenAdapter.height(16)),
+                          Row(
+                            children: [
+                              _buildTag(
+                                  '${paper['quantity'] ?? 0}题',
+                                  const Color(0xFFE8F3FF),
+                                  const Color(0xFF3A7FFF)),
+                              SizedBox(width: ScreenAdapter.width(16)),
+                              _buildTag(
+                                  '${(paper['limit_time'] ?? 0) ~/ 60}分钟',
+                                  const Color(0xFFFFF7E8),
+                                  const Color(0xFFFF9900)),
+                            ],
+                          ),
+                          SizedBox(height: ScreenAdapter.height(12)),
+                          Row(
+                            children: [
+                              Text(
+                                '${paper['join_count'] ?? 0}人已报名',
+                                style: TextStyle(
+                                  fontSize: ScreenAdapter.fontSize(22),
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              SizedBox(width: ScreenAdapter.width(16)),
+                              Text(
+                                '总分: ${paper['total_score'] ?? 0}',
+                                style: TextStyle(
+                                  fontSize: ScreenAdapter.fontSize(22),
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    // 开始考试按钮
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: ScreenAdapter.width(24),
+                        vertical: ScreenAdapter.height(12),
+                      ),
+                      decoration: BoxDecoration(
+                        color: controller.defaultThemeColor,
+                        borderRadius:
+                            BorderRadius.circular(ScreenAdapter.width(30)),
+                      ),
+                      child: Text(
+                        '开始考试',
+                        style: TextStyle(
+                          fontSize: ScreenAdapter.fontSize(24),
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       );
     });
+  }
+
+  // 列表底部 footer：加载中 / 没有更多 / 加载失败点击重试
+  Widget _buildListFooter({
+    required bool isLoadingMore,
+    required bool hasMore,
+    required String loadError,
+    required VoidCallback onRetry,
+  }) {
+    if (loadError.isNotEmpty) {
+      return GestureDetector(
+        onTap: onRetry,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(24)),
+          child: Center(
+            child: Text(
+              loadError,
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(26),
+                color: const Color(0xFF1890FF),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (isLoadingMore) {
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(24)),
+        child: const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1890FF)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (!hasMore) {
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(24)),
+        child: Center(
+          child: Text(
+            '没有更多了',
+            style: TextStyle(
+              fontSize: ScreenAdapter.fontSize(26),
+              color: Colors.grey,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 
   Widget _buildTag(String text, Color bgColor, Color textColor) {
