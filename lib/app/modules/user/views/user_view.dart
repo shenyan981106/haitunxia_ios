@@ -127,22 +127,22 @@ class UserView extends GetView<UserController> {
                       icon: Icons.privacy_tip_outlined,
                       onTap: () => Get.toNamed('/privacy-policy'),
                     ),
-                    _MenuItem(
-                      title: '企业团报合作',
-                      icon: Icons.group_outlined,
-                      onTap: () async {
-                        final url = await controller.fetchCompanyH5Url();
-                        if (url != null) {
-                          final uri = Uri.parse(url);
-                          if (await canLaunchUrl(uri)) {
-                            await launchUrl(uri,
-                                mode: LaunchMode.externalApplication);
-                          } else {
-                            SnackbarUtils.showError('无法打开链接');
-                          }
-                        }
-                      },
-                    ),
+                    // _MenuItem(
+                    //   title: '企业团报合作',
+                    //   icon: Icons.group_outlined,
+                    //   onTap: () async {
+                    //     final url = await controller.fetchCompanyH5Url();
+                    //     if (url != null) {
+                    //       final uri = Uri.parse(url);
+                    //       if (await canLaunchUrl(uri)) {
+                    //         await launchUrl(uri,
+                    //             mode: LaunchMode.externalApplication);
+                    //       } else {
+                    //         SnackbarUtils.showError('无法打开链接');
+                    //       }
+                    //     }
+                    //   },
+                    // ),
                   ]),
                   SizedBox(height: ScreenAdapter.height(40)),
                   _buildIcpLicense(),
