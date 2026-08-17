@@ -422,29 +422,29 @@ class _HomeViewState extends State<HomeView> {
             ],
           ),
         ),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => controller.fetchCompanyConfigAndOpenH5(),
-          child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 12.h),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF1FF),
-              borderRadius: BorderRadius.circular(999.r),
-            ),
-            child: Row(
-              children: [
-                Text(
-                  '企业合作',
-                  style: TextStyle(
-                    fontSize: 30.sp,
-                    fontWeight: w500,
-                    color: const Color(0xFF3D7CFF),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        // GestureDetector(
+        //   behavior: HitTestBehavior.opaque,
+        //   onTap: () => controller.fetchCompanyConfigAndOpenH5(),
+        //   child: Container(
+        //     padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 12.h),
+        //     decoration: BoxDecoration(
+        //       color: const Color(0xFFEAF1FF),
+        //       borderRadius: BorderRadius.circular(999.r),
+        //     ),
+        //     child: Row(
+        //       children: [
+        //         Text(
+        //           '企业合作',
+        //           style: TextStyle(
+        //             fontSize: 30.sp,
+        //             fontWeight: w500,
+        //             color: const Color(0xFF3D7CFF),
+        //           ),
+        //         ),
+        //       ],
+        //     ),
+        //   ),
+        // ),
       ],
     );
   }
