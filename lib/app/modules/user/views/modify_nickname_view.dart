@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../../services/screenAdapter.dart';
+import '../../../components/common_app_bar.dart';
 import '../controllers/modify_nickname_controller.dart';
 
 class ModifyNicknameView extends GetView<ModifyNicknameController> {
@@ -10,19 +11,7 @@ class ModifyNicknameView extends GetView<ModifyNicknameController> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF333333),
-        centerTitle: true,
-        title: Text(
-          '修改昵称',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(40),
-            color: const Color(0xFF333333),
-          ),
-        ),
-      ),
+      appBar: const CommonAppBar(title: '修改昵称'),
       backgroundColor: Colors.white,
       body: Center(
         child: SizedBox(

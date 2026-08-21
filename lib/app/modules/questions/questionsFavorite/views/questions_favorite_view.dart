@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../components/filter_dropdown_button.dart';
 import '../../../../components/common_empty_state.dart';
 import '../../../../components/common_error_state.dart';
+import '../../../../components/common_app_bar.dart';
 import '../controllers/questions_favorite_controller.dart';
 
 /// 题目收藏页面 - 设计稿尺寸：1080x2400
@@ -19,58 +20,24 @@ class QuestionsFavoriteView extends GetView<QuestionsFavoriteController> {
       ),
       child: Scaffold(
         backgroundColor: Colors.white,
+        appBar: CommonAppBar(
+          title: '收藏题目',
+          titleStyle: TextStyle(
+            fontSize: 48.sp,
+            color: Color(0xFF333333),
+          ),
+          toolbarHeight: 112.h,
+          actions: [SizedBox(width: 44.w)],
+          bottomBorderColor: const Color(0xFFEEEEEE),
+        ),
         body: SafeArea(
           child: Column(
             children: [
-              _buildAppBar(context),
               _buildFilterBar(context),
               Expanded(child: _buildBody()),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  /// 构建顶部导航栏：返回 | 收藏题目 | 导出
-  Widget _buildAppBar(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 36.w),
-      height: 112.h,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1),
-        ),
-      ),
-      child: Row(
-        children: [
-          // 左侧返回按钮
-          GestureDetector(
-            onTap: () => Get.back(),
-            child: Icon(
-              Icons.arrow_back_ios,
-              size: 44.sp,
-              color: Color(0xFF333333),
-            ),
-          ),
-
-          // 中间标题（居中）
-          Expanded(
-            child: Center(
-              child: Text(
-                '收藏题目',
-                style: TextStyle(
-                  fontSize: 48.sp,
-                  color: Color(0xFF333333),
-                ),
-              ),
-            ),
-          ),
-
-          // 右侧占位，保持标题居中
-          SizedBox(width: 44.w),
-        ],
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../../../../components/common_app_bar.dart';
 import 'package:get/get.dart';
 import 'package:xmshop/app/routes/app_pages.dart';
 import '../controllers/questions_result_controller.dart';
@@ -17,6 +18,17 @@ class QuestionsResultView extends GetView<QuestionsResultController> {
       ),
       child: Scaffold(
         backgroundColor: const Color(0xFFE8EDFF),
+        appBar: CommonAppBar(
+          title: '练习报告',
+          titleStyle: TextStyle(
+            fontSize: 50.sp,
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF333333),
+          ),
+          toolbarHeight: 100.h,
+          backgroundColor: Colors.transparent,
+          actions: [SizedBox(width: 56.sp)],
+        ),
         body: SafeArea(
           bottom: false,
           child: Stack(
@@ -36,7 +48,6 @@ class QuestionsResultView extends GetView<QuestionsResultController> {
               ),
               Column(
                 children: [
-                  _buildTopNav(),
                   Expanded(
                     child: ListView(
                       padding: EdgeInsets.symmetric(
@@ -60,48 +71,6 @@ class QuestionsResultView extends GetView<QuestionsResultController> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildTopNav() {
-    return Container(
-      height: 100.h,
-      padding: EdgeInsets.symmetric(horizontal: 16.w),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => Get.back(),
-            child: Icon(
-              Icons.chevron_left,
-              size: 56.sp,
-              color: const Color(0xFF333333),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              '练习报告',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 50.sp,
-                fontWeight: FontWeight.w500,
-                color: const Color(0xFF333333),
-              ),
-            ),
-          ),
-          // 与左侧返回按钮等宽，保持标题居中
-          SizedBox(width: 56.sp),
-          // GestureDetector(
-          //   onTap: () {
-          //     // TODO: 分享功能
-          //   },
-          //   child: Icon(
-          //     Icons.share_outlined,
-          //     size: 48.sp,
-          //     color: const Color(0xFF333333),
-          //   ),
-          // ),
-        ],
       ),
     );
   }

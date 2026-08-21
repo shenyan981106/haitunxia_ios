@@ -35,6 +35,10 @@ class LoginController extends GetxController {
   // ==================== 发送验证码 ====================
   /// 发送验证码（API: addons/exam/user/sendCode）
   Future<void> sendVerificationCode() async {
+    // ★2026-08-14 修复:请求进行中禁止重复发送。快速连点会产生双请求 +
+    // 双跳转 verification 页(压栈竞态导致 controller 销毁时机错乱,偶发崩溃)
+    if (isLoading.value) return;
+
     final phoneNumber = phoneController.text.trim();
 
     // 1. 验证手机号格式（使用统一验证器）
@@ -96,6 +100,9 @@ class LoginController extends GetxController {
   /// 验证码登录（API: addons/exam/user/appLogin）
   /// 验证通过后保存Token并跳转首页
   Future<void> login() async {
+    // ★2026-08-14 修复:防重复提交(连点两次会发两个登录请求)
+    if (isLoading.value) return;
+
     final phoneNumber = phoneController.text.trim();
     final code = verificationCode.value.trim();
 
@@ -143,9 +150,7 @@ class LoginController extends GetxController {
 
           // 保存认证信息
           final user = UserModel.fromJson(userMap);
-          // 获取会员状态 (user.info.status: 1=会员, 0=非会员, 2=已过期)
-          final mStatus = user.info?.status ?? 0;
-          AuthService.to.setAuth(token, user, memberStat: mStatus);
+          AuthService.to.setAuth(token, user);
           SnackbarUtils.showSuccess('登录成功');
           Get.offAllNamed(Routes.TABS);
         } else {
@@ -282,10 +287,17 @@ class LoginController extends GetxController {
     _countdownTimer?.cancel();
     _countdownTimer = null;
 
-    // 直接释放即可。之前用 Rx 包裹时才需要 postFrame 延迟（反而拉长了
-    // "控制器已释放但视图仍挂载"的窗口）；改成普通字段后这是标准做法。
-    phoneController.dispose();
-    codeController.dispose();
+    // ★2026-08-14 修复:TextEditingController 延迟到路由动画结束后再释放。
+    // 登录成功走 Get.offAllNamed(TABS) 或 401 全局跳转时,GetX 会同步 dispose
+    // 本 controller,但旧页面在路由替换/键盘收起动画期间仍可能 rebuild
+    // (焦点/insets 变化),build 里访问已 dispose 的 phoneController/codeController
+    // 会偶发崩溃("A TextEditingController was used after being disposed")。
+    // 延迟 500ms(覆盖默认过渡动画)再释放,此时视图已卸载,安全;
+    // 期间即使重进登录页也是新实例(LoginBinding fenix:true 重建),互不影响。
+    Future.delayed(const Duration(milliseconds: 500), () {
+      phoneController.dispose();
+      codeController.dispose();
+    });
 
     super.onClose();
   }

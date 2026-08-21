@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../services/screenAdapter.dart';
+import '../../../components/common_back_button.dart';
 import '../controllers/order_detail_controller.dart';
 
 class OrderDetailView extends GetView<OrderDetailController> {
@@ -39,9 +40,8 @@ class OrderDetailView extends GetView<OrderDetailController> {
       if (names.isNotEmpty) teacherName = names.join('、');
     }
 
-    // 价格
-    final double price =
-        double.tryParse(course['price']?.toString() ?? '0') ?? 0;
+    // 价格:订单金额优先取实付金额(非 0),否则订单 price,再兜底课程价
+    final double price = _getOrderAmount(order, course);
 
     // 订单信息
     final String payTime = order['payment_time_text']?.toString() ??
@@ -60,11 +60,7 @@ class OrderDetailView extends GetView<OrderDetailController> {
           backgroundColor: const Color(0xFF3D7CFF),
           foregroundColor: Colors.white,
           elevation: 0,
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back_ios,
-                color: Colors.white, size: ScreenAdapter.fontSize(44)),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
+          leading: const CommonBackButton(color: Colors.white),
           centerTitle: true,
           flexibleSpace: FlexibleSpaceBar(
             centerTitle: true,
@@ -438,6 +434,17 @@ class _OrderInfoCard extends StatelessWidget {
       ],
     );
   }
+}
+
+/// 订单金额取值链:actual_amount(实付)非 0 优先 → 订单 price → 课程价兜底
+double _getOrderAmount(Map<String, dynamic> order, Map<String, dynamic> course) {
+  final double actualAmount =
+      double.tryParse(order['actual_amount']?.toString() ?? '') ?? 0;
+  if (actualAmount != 0) return actualAmount;
+  final double orderPrice =
+      double.tryParse(order['price']?.toString() ?? '') ?? 0;
+  if (orderPrice != 0) return orderPrice;
+  return double.tryParse(course['price']?.toString() ?? '0') ?? 0;
 }
 
 /// 时间戳转 yyyy 年 MM 月 dd 日

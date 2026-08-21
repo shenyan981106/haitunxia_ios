@@ -51,13 +51,18 @@ class UserView extends GetView<UserController> {
                   SizedBox(height: ScreenAdapter.height(36)),
                   _buildVipCard(),
                   SizedBox(height: ScreenAdapter.height(36)),
-                  // _buildActivationCodeEntry(),
-                  // SizedBox(height: ScreenAdapter.height(24)),
+                  _buildActivationCodeEntry(),
+                  SizedBox(height: ScreenAdapter.height(24)),
                   _buildMenuGroup([
                     _MenuItem(
                       title: '我的订单',
                       icon: Icons.receipt_outlined,
                       onTap: () => Get.toNamed('/my-orders'),
+                    ),
+                    _MenuItem(
+                      title: '我的权益',
+                      icon: Icons.workspace_premium_outlined,
+                      onTap: () => Get.toNamed('/member-rights'),
                     ),
                     _MenuItem(
                       title: '我的课程',
@@ -116,6 +121,11 @@ class UserView extends GetView<UserController> {
                       title: '意见反馈',
                       icon: Icons.feedback_outlined,
                       onTap: () => Get.toNamed('/question-feedback'),
+                    ),
+                    _MenuItem(
+                      title: '收货地址',
+                      icon: Icons.location_on_outlined,
+                      onTap: () => Get.toNamed('/address-list'),
                     ),
                     _MenuItem(
                       title: '平台资质',
@@ -269,168 +279,165 @@ class UserView extends GetView<UserController> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => Get.toNamed('/vip-center'),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(ScreenAdapter.width(26)),
-        child: Obx(() => Image.asset(
-              AuthService.to.isMember
-                  ? 'assets/images/vip_finish.png'
-                  : 'assets/images/vip_open.jpg',
-              width: double.infinity,
-              fit: BoxFit.cover,
-            )),
+      // 新版 vip_open.jpg 为浅色横幅,白色区块直达顶部两角,
+      // 圆角裁切会在顶角露白缝,故整幅直角展示
+      child: Image.asset(
+        'assets/images/vip_open.jpg',
+        width: double.infinity,
+        fit: BoxFit.cover,
       ),
     );
   }
 
-  // Widget _buildActivationCodeEntry() {
-  //   return GestureDetector(
-  //     behavior: HitTestBehavior.opaque,
-  //     onTap: () => _showActivationCodeDialog(),
-  //     child: Container(
-  //       decoration: BoxDecoration(
-  //         color: Colors.white,
-  //         borderRadius: BorderRadius.circular(ScreenAdapter.width(26)),
-  //       ),
-  //       padding: EdgeInsets.symmetric(
-  //         horizontal: ScreenAdapter.width(40),
-  //         vertical: ScreenAdapter.height(30),
-  //       ),
-  //       child: Row(
-  //         children: [
-  //           Icon(
-  //             Icons.card_giftcard_outlined,
-  //             size: ScreenAdapter.fontSize(44),
-  //             color: const Color(0xFF666666),
-  //           ),
-  //           SizedBox(width: ScreenAdapter.width(30)),
-  //           Expanded(
-  //             child: Text(
-  //               '激活码兑换',
-  //               style: TextStyle(
-  //                 fontSize: ScreenAdapter.fontSize(40),
-  //                 fontWeight: FontWeight.w500,
-  //                 color: const Color(0xFF333333),
-  //               ),
-  //             ),
-  //           ),
-  //           Icon(
-  //             Icons.chevron_right,
-  //             size: ScreenAdapter.fontSize(44),
-  //             color: const Color(0xFFCCCCCC),
-  //           ),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  // }
+  Widget _buildActivationCodeEntry() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _showActivationCodeDialog(),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(ScreenAdapter.width(26)),
+        ),
+        padding: EdgeInsets.symmetric(
+          horizontal: ScreenAdapter.width(40),
+          vertical: ScreenAdapter.height(30),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.card_giftcard_outlined,
+              size: ScreenAdapter.fontSize(44),
+              color: const Color(0xFF666666),
+            ),
+            SizedBox(width: ScreenAdapter.width(30)),
+            Expanded(
+              child: Text(
+                '激活码兑换',
+                style: TextStyle(
+                  fontSize: ScreenAdapter.fontSize(40),
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF333333),
+                ),
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              size: ScreenAdapter.fontSize(44),
+              color: const Color(0xFFCCCCCC),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-  // void _showActivationCodeDialog() {
-  //   final controller = TextEditingController();
-  //   showDialog(
-  //     context: Get.context!,
-  //     barrierColor: Colors.black45,
-  //     builder: (context) {
-  //       return Center(
-  //         child: Material(
-  //           color: Colors.transparent,
-  //           child: Container(
-  //             width: ScreenAdapter.width(820),
-  //             padding: EdgeInsets.fromLTRB(
-  //               ScreenAdapter.width(48),
-  //               ScreenAdapter.height(48),
-  //               ScreenAdapter.width(48),
-  //               ScreenAdapter.height(40),
-  //             ),
-  //             decoration: BoxDecoration(
-  //               color: Colors.white,
-  //               borderRadius: BorderRadius.circular(ScreenAdapter.width(20)),
-  //             ),
-  //             child: Column(
-  //               mainAxisSize: MainAxisSize.min,
-  //               children: [
-  //                 Text(
-  //                   '激活码兑换',
-  //                   style: TextStyle(
-  //                     fontSize: ScreenAdapter.fontSize(42),
-  //                     fontWeight: FontWeight.w600,
-  //                     color: const Color(0xFF333333),
-  //                   ),
-  //                 ),
-  //                 SizedBox(height: ScreenAdapter.height(32)),
-  //                 Container(
-  //                   height: ScreenAdapter.height(90),
-  //                   decoration: BoxDecoration(
-  //                     color: const Color(0xFFF5F6FA),
-  //                     borderRadius:
-  //                         BorderRadius.circular(ScreenAdapter.width(12)),
-  //                     border: Border.all(
-  //                       color: const Color(0xFFE8E9ED),
-  //                       width: 1,
-  //                     ),
-  //                   ),
-  //                   child: TextField(
-  //                     controller: controller,
-  //                     textAlignVertical: TextAlignVertical.center,
-  //                     decoration: InputDecoration(
-  //                       hintText: '请输入激活码',
-  //                       hintStyle: TextStyle(
-  //                         color: const Color(0xFFBBBBCC),
-  //                         fontSize: ScreenAdapter.fontSize(28),
-  //                       ),
-  //                       border: InputBorder.none,
-  //                       contentPadding: EdgeInsets.symmetric(
-  //                         horizontal: ScreenAdapter.width(24),
-  //                         vertical: ScreenAdapter.height(16),
-  //                       ),
-  //                       isDense: true,
-  //                     ),
-  //                     style: TextStyle(
-  //                       fontSize: ScreenAdapter.fontSize(30),
-  //                       color: const Color(0xFF999999),
-  //                       letterSpacing: 1.5,
-  //                     ),
-  //                   ),
-  //                 ),
-  //                 SizedBox(height: ScreenAdapter.height(36)),
-  //                 GestureDetector(
-  //                   onTap: () async {
-  //                     final code = controller.text.trim();
-  //                     if (code.isEmpty) {
-  //                       SnackbarUtils.showError('请输入激活码');
-  //                       return;
-  //                     }
-  //                     Navigator.pop(context);
-  //                     await this.controller.exchangeActivationCode(code);
-  //                   },
-  //                   child: Container(
-  //                     width: ScreenAdapter.width(400),
-  //                     height: ScreenAdapter.height(80),
-  //                     alignment: Alignment.center,
-  //                     decoration: BoxDecoration(
-  //                       gradient: const LinearGradient(
-  //                         colors: [Color(0xFF4A9FF5), Color(0xFF3B8DE6)],
-  //                       ),
-  //                       borderRadius:
-  //                           BorderRadius.circular(ScreenAdapter.width(40)),
-  //                     ),
-  //                     child: Text(
-  //                       '确认兑换',
-  //                       style: TextStyle(
-  //                         fontSize: ScreenAdapter.fontSize(32),
-  //                         fontWeight: FontWeight.w500,
-  //                         color: Colors.white,
-  //                       ),
-  //                     ),
-  //                   ),
-  //                 ),
-  //               ],
-  //             ),
-  //           ),
-  //         ),
-  //       );
-  //     },
-  //   );
-  // }
+  void _showActivationCodeDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: Get.context!,
+      barrierColor: Colors.black45,
+      builder: (context) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: ScreenAdapter.width(820),
+              padding: EdgeInsets.fromLTRB(
+                ScreenAdapter.width(48),
+                ScreenAdapter.height(48),
+                ScreenAdapter.width(48),
+                ScreenAdapter.height(40),
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(ScreenAdapter.width(20)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '激活码兑换',
+                    style: TextStyle(
+                      fontSize: ScreenAdapter.fontSize(42),
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF333333),
+                    ),
+                  ),
+                  SizedBox(height: ScreenAdapter.height(32)),
+                  Container(
+                    height: ScreenAdapter.height(90),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5F6FA),
+                      borderRadius:
+                          BorderRadius.circular(ScreenAdapter.width(12)),
+                      border: Border.all(
+                        color: const Color(0xFFE8E9ED),
+                        width: 1,
+                      ),
+                    ),
+                    child: TextField(
+                      controller: controller,
+                      textAlignVertical: TextAlignVertical.center,
+                      decoration: InputDecoration(
+                        hintText: '请输入激活码',
+                        hintStyle: TextStyle(
+                          color: const Color(0xFFBBBBCC),
+                          fontSize: ScreenAdapter.fontSize(28),
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: ScreenAdapter.width(24),
+                          vertical: ScreenAdapter.height(16),
+                        ),
+                        isDense: true,
+                      ),
+                      style: TextStyle(
+                        fontSize: ScreenAdapter.fontSize(30),
+                        color: const Color(0xFF999999),
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: ScreenAdapter.height(36)),
+                  GestureDetector(
+                    onTap: () async {
+                      final code = controller.text.trim();
+                      if (code.isEmpty) {
+                        SnackbarUtils.showError('请输入激活码');
+                        return;
+                      }
+                      Navigator.pop(context);
+                      await this.controller.exchangeActivationCode(code);
+                    },
+                    child: Container(
+                      width: ScreenAdapter.width(400),
+                      height: ScreenAdapter.height(80),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF4A9FF5), Color(0xFF3B8DE6)],
+                        ),
+                        borderRadius:
+                            BorderRadius.circular(ScreenAdapter.width(40)),
+                      ),
+                      child: Text(
+                        '确认兑换',
+                        style: TextStyle(
+                          fontSize: ScreenAdapter.fontSize(32),
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildMenuGroup(List<_MenuItem> items) {
     return Container(

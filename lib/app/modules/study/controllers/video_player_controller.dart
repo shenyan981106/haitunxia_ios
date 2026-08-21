@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:super_player/super_player.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../services/snackbar_utils.dart';
+import 'package:xmshop/app/utils/app_log.dart';
 
 class StudyVideoPlayerController extends GetxController {
   TXVodPlayerController? txVodPlayerController;
@@ -76,7 +77,7 @@ class StudyVideoPlayerController extends GetxController {
 
       isVideoInitialized.value = true;
     } catch (e) {
-      print("Error: Failed to initialize video player - $e");
+      AppLog.d("Error: Failed to initialize video player - $e");
       SnackbarUtils.showError("视频加载失败");
     }
   }

@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../components/filter_dropdown_button.dart';
 import '../../../../components/common_empty_state.dart';
 import '../../../../components/common_error_state.dart';
+import '../../../../components/common_app_bar.dart';
 import '../controllers/questions_wrong_controller.dart';
 
 /// 错题本页 - 风格与收藏页面完全一致（筛选栏 + 分组列表）
@@ -19,64 +20,32 @@ class QuestionsWrongView extends GetView<QuestionsWrongController> {
       ),
       child: Scaffold(
         backgroundColor: Colors.white,
+        appBar: CommonAppBar(
+          title: '错题',
+          titleStyle: TextStyle(
+            fontSize: 48.sp,
+            color: Color(0xFF333333),
+          ),
+          toolbarHeight: 112.h,
+          actions: [
+            Obx(() => Text(
+                  '${controller.totalCount.value}题',
+                  style: TextStyle(
+                    fontSize: 32.sp,
+                    color: Color(0xFF999999),
+                  ),
+                )),
+          ],
+          bottomBorderColor: const Color(0xFFEEEEEE),
+        ),
         body: SafeArea(
           child: Column(
             children: [
-              _buildAppBar(context),
               _buildFilterBar(context),
               Expanded(child: _buildBody()),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  /// 构建顶部导航栏：返回 | 错题 | 错题数量
-  Widget _buildAppBar(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 36.w),
-      height: 112.h,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Color(0xFFEEEEEE), width: 1),
-        ),
-      ),
-      child: Row(
-        children: [
-          // 左侧返回按钮
-          GestureDetector(
-            onTap: () => Get.back(),
-            child: Icon(
-              Icons.arrow_back_ios,
-              size: 44.sp,
-              color: Color(0xFF333333),
-            ),
-          ),
-
-          // 中间标题（居中）
-          Expanded(
-            child: Center(
-              child: Text(
-                '错题',
-                style: TextStyle(
-                  fontSize: 48.sp,
-                  color: Color(0xFF333333),
-                ),
-              ),
-            ),
-          ),
-
-          // 右侧：错题数量
-          Obx(() => Text(
-                '${controller.totalCount.value}题',
-                style: TextStyle(
-                  fontSize: 32.sp,
-                  color: Color(0xFF999999),
-                ),
-              )),
-        ],
       ),
     );
   }

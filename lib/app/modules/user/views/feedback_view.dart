@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../services/screenAdapter.dart';
+import '../../../components/common_app_bar.dart';
 
 // 意见反馈页面
 class FeedbackView extends StatelessWidget {
@@ -10,20 +11,7 @@ class FeedbackView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FB),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF333333),
-        centerTitle: true,
-        title: Text(
-          '意见反馈',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(40),
-            color: const Color(0xFF333333),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
+      appBar: const CommonAppBar(title: '意见反馈'),
       body: ListView(
         padding: EdgeInsets.symmetric(
           horizontal: ScreenAdapter.width(30),

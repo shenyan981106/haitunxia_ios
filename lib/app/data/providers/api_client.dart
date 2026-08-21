@@ -35,6 +35,7 @@ class ApiClient extends GetxService {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'device-type': 'app',
         },
       ),
     );
@@ -104,6 +105,26 @@ class ApiClient extends GetxService {
     handler.next(options);
   }
 
+  /// 是否正在跳转登录页(防并发 401 重复跳转的原子锁)
+  bool _isRedirectingToLogin = false;
+
+  /// 统一处理登录过期:清登录态 + 原子跳转登录页
+  void _handleUnauthorized() {
+    if (_isRedirectingToLogin) return;
+    _isRedirectingToLogin = true;
+    if (Get.isRegistered<AuthService>()) {
+      AuthService.to.clearAuth();
+    }
+    // 防止重复跳转(已在登录页则跳过)
+    if (!Get.currentRoute.startsWith(Routes.LOGIN)) {
+      Get.offAllNamed(Routes.LOGIN);
+    }
+    // 跳转完成后复位锁;登录页内不会再触发 401,2 秒兜底防锁死
+    Future.delayed(const Duration(seconds: 2), () {
+      _isRedirectingToLogin = false;
+    });
+  }
+
   /// 响应拦截
   void _onResponse(dio_package.Response response,
       dio_package.ResponseInterceptorHandler handler) {
@@ -113,12 +134,22 @@ class ApiClient extends GetxService {
       debugPrint('📦 RESPONSE DATA: ${response.data}');
     }
 
-    // 处理业务错误
+    // ★2026-08-14 修复:后端多数接口登录过期以 200 + body code=401 返回
+    // (非 HTTP 401),此处统一识别:清登录态 + 原子跳转,并把响应转成错误交调用方处理
     final data = response.data;
     if (data is Map) {
       final code = data['code'];
-      if (code != null && code != 0 && code != 1 && code != 200) {
-        // 业务错误，不中断流程，由调用方处理
+      if (code == 401 || code == '401') {
+        _handleUnauthorized();
+        handler.reject(
+          dio_package.DioException(
+            requestOptions: response.requestOptions,
+            response: response,
+            type: dio_package.DioExceptionType.badResponse,
+            message: '登录已过期，请重新登录',
+          ),
+        );
+        return;
       }
     }
 
@@ -154,14 +185,8 @@ class ApiClient extends GetxService {
       case dio_package.DioExceptionType.badResponse:
         final statusCode = err.response?.statusCode;
         if (statusCode == 401) {
-          // Token过期或无效，跳转登录页面
-          if (Get.isRegistered<AuthService>()) {
-            AuthService.to.clearAuth();
-          }
-          // 防止重复跳转
-          if (!Get.currentRoute.startsWith(Routes.LOGIN)) {
-            Get.offAllNamed(Routes.LOGIN);
-          }
+          // Token过期或无效,跳转登录页面(与业务码 401 统一走原子锁)
+          _handleUnauthorized();
           err = dio_package.DioException(
             requestOptions: err.requestOptions,
             type: err.type,

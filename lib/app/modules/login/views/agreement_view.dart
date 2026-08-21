@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import '../../../components/common_app_bar.dart';
 import '../../../data/providers/api_client.dart';
 
 class AgreementView extends StatelessWidget {
@@ -16,29 +17,14 @@ class AgreementView extends StatelessWidget {
       length: 2,
       child: Scaffold(
         backgroundColor: Colors.white,
-        appBar: AppBar(
-          elevation: 0,
-          backgroundColor: Colors.white,
-          foregroundColor: const Color(0xFF333333),
+        appBar: CommonAppBar(
+          title: '用户协议与隐私政策',
+          titleStyle: TextStyle(
+            fontSize: 40.sp,
+            color: const Color(0xFF333333),
+          ),
           centerTitle: false,
           titleSpacing: 0,
-          title: Text(
-            "用户协议与隐私政策",
-            style: TextStyle(
-              fontSize: 40.sp,
-              color: const Color(0xFF333333),
-            ),
-          ),
-          leading: IconButton(
-            icon: Icon(
-              Icons.arrow_back_ios,
-              size: 60.sp,
-              color: const Color(0xFF333333),
-            ),
-            onPressed: () {
-              Get.back();
-            },
-          ),
           bottom: PreferredSize(
             preferredSize: Size.fromHeight(48.h),
             child: Container(

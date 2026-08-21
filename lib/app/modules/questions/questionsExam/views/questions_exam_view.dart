@@ -3,8 +3,11 @@ import 'package:get/get.dart';
 import '../../../../data/models/category_model.dart';
 import '../../../../services/screenAdapter.dart';
 import '../../../../services/keepAliveWrapper.dart';
+import '../../../../components/app_tag.dart';
+import '../../../../components/common_empty_state.dart';
 import '../controllers/questions_exam_controller.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:xmshop/app/utils/app_log.dart';
 
 class QuestionsExamView extends GetView<QuestionsExamController> {
   const QuestionsExamView({Key? key}) : super(key: key);
@@ -156,14 +159,11 @@ class QuestionsExamView extends GetView<QuestionsExamController> {
             .toList();
 
     if (filteredList.isEmpty) {
-      return Center(
-        child: Text(
-          '暂无相关课程',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(28),
-            color: Colors.grey,
-          ),
-        ),
+      return const CommonEmptyState(
+        icon: Icons.school_outlined,
+        title: '暂无相关课程',
+        titleFontSize: 28,
+        iconSize: 120,
       );
     }
 
@@ -362,7 +362,7 @@ class QuestionsExamView extends GetView<QuestionsExamController> {
 
             final paper = examPapers[index];
             return GestureDetector(
-              onTap: () {
+              onTap: () async {
                 // 解析 configs 获取实际的题目分类ID
                 var cateId = paper['id']; // 默认使用paper id
                 try {
@@ -375,11 +375,29 @@ class QuestionsExamView extends GetView<QuestionsExamController> {
                     }
                   }
                 } catch (e) {
-                  print('Error parsing paper configs: $e');
+                  AppLog.d('Error parsing paper configs: $e');
                 }
 
                 // 跳转到考试详情或答题页
-                Get.toNamed('/question-train', arguments: {
+                // 收藏来源类型按页面类型映射:模拟考试=3,历年真题=2,其余(必刷母题/章节详情)=1
+                final collectType = controller.pageType == 'mock_exams'
+                    ? 3
+                    : (controller.pageType == 'past_exams' ? 2 : 1);
+
+                // practice 信息透传（practice_id>0 进入续答回填）
+                Map<String, dynamic> practiceInfo = {};
+                try {
+                  final practiceRaw = paper['practice'];
+                  if (practiceRaw is Map) {
+                    practiceInfo = practiceRaw.map<String, dynamic>(
+                        (k, v) => MapEntry(k.toString(), v));
+                  }
+                } catch (e) {
+                  AppLog.d('读取试卷 practice 信息失败: $e');
+                }
+                final isPastPaper = paper['type'] == 'PASTEXAM';
+
+                await Get.toNamed('/question-train', arguments: {
                   'mode': 'EXAM',
                   'cate_id': cateId,
                   'paper_id': paper['id'],
@@ -388,7 +406,14 @@ class QuestionsExamView extends GetView<QuestionsExamController> {
                   'join_count': paper['join_count'],
                   'total_score': paper['total_score'],
                   'pass_score': paper['pass_score'],
+                  'type': collectType,
+                  'practice': practiceInfo,
+                  'source_scope': isPastPaper ? 'PAPER_PAST' : 'PAPER_MOCK',
+                  'source_id': paper['id'],
                 });
+
+                // ★答题页返回后刷新试卷列表(practice 进度会变化,否则展示旧数据)
+                controller.refreshExamPapers(subjectId);
               },
               child: Container(
                 margin: EdgeInsets.only(bottom: ScreenAdapter.height(24)),
@@ -569,21 +594,15 @@ class QuestionsExamView extends GetView<QuestionsExamController> {
   }
 
   Widget _buildTag(String text, Color bgColor, Color textColor) {
-    return Container(
+    return AppTag(
+      text,
+      bgColor: bgColor,
+      textColor: textColor,
+      radius: ScreenAdapter.width(4),
+      fontSize: ScreenAdapter.fontSize(20),
       padding: EdgeInsets.symmetric(
         horizontal: ScreenAdapter.width(12),
         vertical: ScreenAdapter.height(4),
-      ),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(ScreenAdapter.width(4)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: ScreenAdapter.fontSize(20),
-          color: textColor,
-        ),
       ),
     );
   }

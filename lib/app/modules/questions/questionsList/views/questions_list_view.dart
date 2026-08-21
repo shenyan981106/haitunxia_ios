@@ -8,7 +8,10 @@ import '../controllers/questions_list_controller.dart';
 import '../../../../services/keepAliveWrapper.dart';
 import "../../../../services/screenAdapter.dart";
 import '../../../../services/snackbar_utils.dart';
-import '../../../../data/services/auth_service.dart';
+import '../../../../components/common_app_bar.dart';
+import '../../../../components/common_empty_state.dart';
+import '../../../../data/services/subject_vip_service.dart';
+import 'package:xmshop/app/utils/app_log.dart';
 
 class QuestionsListView extends StatefulWidget {
   const QuestionsListView({super.key});
@@ -61,24 +64,14 @@ class _QuestionsListViewState extends State<QuestionsListView> {
 
     return KeepAliveWrapper(
       child: Scaffold(
-        appBar: AppBar(
-          centerTitle: true,
-          backgroundColor: Colors.white,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          title: Obx(() => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    globalController.currentProjectName,
-                    style: TextStyle(
-                      fontSize: ScreenAdapter.fontSize(50),
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black,
-                    ),
-                  ),
-                  SizedBox(height: ScreenAdapter.height(6)),
-                ],
+        appBar: CommonAppBar(
+          titleWidget: Obx(() => Text(
+                globalController.currentProjectName,
+                style: TextStyle(
+                  fontSize: ScreenAdapter.fontSize(50),
+                  fontWeight: FontWeight.w500,
+                  color: Colors.black,
+                ),
               )),
           bottom: PreferredSize(
             preferredSize: Size.fromHeight(ScreenAdapter.height(150)),
@@ -114,14 +107,11 @@ class _QuestionsListViewState extends State<QuestionsListView> {
 
     // 如果没有章节数据，显示提示
     if (chapters.isEmpty) {
-      return Center(
-        child: Text(
-          '该科目下暂无题目',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(40),
-            color: Colors.grey[600],
-          ),
-        ),
+      return const CommonEmptyState(
+        icon: Icons.description_outlined,
+        title: '该科目下暂无题目',
+        titleFontSize: 40,
+        iconSize: 120,
       );
     }
 
@@ -834,15 +824,22 @@ class _ChapterCard extends StatelessWidget {
             // 做题按钮（实心蓝色）
             if (hasAction)
               GestureDetector(
-                onTap: () {
-                  if (questionType == 2 && !AuthService.to.isMember) {
-                    _showVipDialog();
-                    return;
+                onTap: () async {
+                  if (questionType == 2) {
+                    // 章节母题(VIP题库):按顶部三级科目判断 VIP 是否开通
+                    final subjectId =
+                        controller.currentColumnId?.toString() ?? '';
+                    final opened =
+                        await SubjectVipService.to.ensureSubjectOpened(subjectId);
+                    if (!opened) {
+                      _showVipDialog();
+                      return;
+                    }
                   }
 
                   var cateId = section['id'];
 
-                  print(
+                  AppLog.d(
                       '👉 准备跳转做题，cate_id: $cateId, Title: ${section['title']}, RAW: ${section['raw']}');
 
                   if (cateId == null) {
@@ -853,10 +850,29 @@ class _ChapterCard extends StatelessWidget {
                   try {
                     Get.delete<QuestionTrainController>(force: true);
                   } catch (e) {
-                    print('Failed to delete QuestionTrainController: $e');
+                    AppLog.d('Failed to delete QuestionTrainController: $e');
                   }
 
-                  Get.toNamed(
+                  // 从章节列表返回的 practice 信息透传（type_1=普通题, type_2=母题）
+                  // practice_id>0 时答题页会调 practice/detail 续答回填
+                  Map<String, dynamic> practiceInfo = {};
+                  try {
+                    final raw = section['raw'];
+                    if (raw is Map) {
+                      final practiceKey = questionType == 2
+                          ? 'type_2_practice'
+                          : 'type_1_practice';
+                      final practiceRaw = raw[practiceKey];
+                      if (practiceRaw is Map) {
+                        practiceInfo = practiceRaw.map<String, dynamic>(
+                            (k, v) => MapEntry(k.toString(), v));
+                      }
+                    }
+                  } catch (e) {
+                    AppLog.d('读取章节 practice 信息失败: $e');
+                  }
+
+                  await Get.toNamed(
                     '/question-train',
                     parameters: {
                       'cate_id': cateId.toString(),
@@ -869,9 +885,18 @@ class _ChapterCard extends StatelessWidget {
                       'subject': controller.tabTitles[tabIndex] ?? '',
                       'chapter': chapter['title']?.toString() ?? '',
                       'sectionTitle': section['title']?.toString() ?? '',
+                      'practice': practiceInfo,
+                      'source_scope': 'CHAPTER',
+                      'source_id': cateId,
                       '_ts': DateTime.now().millisecondsSinceEpoch,
                     },
                   );
+
+                  // ★答题页返回后刷新章节列表(practice 进度/正确率会变化,否则展示旧数据)
+                  final columnId = controller.currentColumnId;
+                  if (columnId != null) {
+                    controller.loadChapters(columnId);
+                  }
                 },
                 child: Container(
                   width: ScreenAdapter.width(160),

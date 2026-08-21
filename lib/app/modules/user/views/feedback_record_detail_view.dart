@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../services/screenAdapter.dart';
+import '../../../components/common_app_bar.dart';
+import '../../../components/app_tag.dart';
 
 // 反馈记录详情页面
 class FeedbackRecordDetailView extends StatelessWidget {
@@ -14,19 +16,7 @@ class FeedbackRecordDetailView extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF333333),
-        centerTitle: true,
-        title: Text(
-          '反馈详情',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(36),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
+      appBar: const CommonAppBar(title: '反馈详情'),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(ScreenAdapter.width(32)),
         child: Column(
@@ -47,26 +37,18 @@ class FeedbackRecordDetailView extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _buildInfoItem('反馈类型', record['type']),
-                      Container(
+                      AppTag(
+                        status,
+                        bgColor: isReplied
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFFFF3E0),
+                        textColor: isReplied
+                            ? const Color(0xFF4CAF50)
+                            : const Color(0xFFFF9800),
+                        fontSize: ScreenAdapter.fontSize(24),
                         padding: EdgeInsets.symmetric(
                           horizontal: ScreenAdapter.width(16),
                           vertical: ScreenAdapter.height(8),
-                        ),
-                        decoration: BoxDecoration(
-                          color: isReplied
-                              ? const Color(0xFFE8F5E9)
-                              : const Color(0xFFFFF3E0),
-                          borderRadius:
-                              BorderRadius.circular(ScreenAdapter.width(8)),
-                        ),
-                        child: Text(
-                          status,
-                          style: TextStyle(
-                            fontSize: ScreenAdapter.fontSize(24),
-                            color: isReplied
-                                ? const Color(0xFF4CAF50)
-                                : const Color(0xFFFF9800),
-                          ),
                         ),
                       ),
                     ],

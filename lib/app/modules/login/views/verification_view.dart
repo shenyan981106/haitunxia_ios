@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../../../components/common_back_button.dart';
 import '../controllers/login_controller.dart';
 
 class VerificationView extends GetView<LoginController> {
@@ -38,16 +39,7 @@ class VerificationView extends GetView<LoginController> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 顶部返回区域
-                Container(
-                  padding: EdgeInsets.all(24.w),
-                  child: IconButton(
-                    icon: Icon(Icons.arrow_back_ios,
-                        color: Color(0xFF333333), size: 40.sp),
-                    onPressed: () {
-                      Get.back();
-                    },
-                  ),
-                ),
+                const CommonBackButton(),
 
                 // 页面主标题区域
                 SizedBox(height: 120.h),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
@@ -14,6 +15,7 @@ import 'package:xmshop/app/services/screenAdapter.dart';
 import 'package:xmshop/app/data/services/auth_service.dart';
 import 'package:xmshop/app/data/repositories/exam_repository.dart';
 import 'package:xmshop/app/components/common_dialog.dart';
+import 'package:xmshop/app/utils/app_log.dart';
 
 class QuestionTrainController extends GetxController {
   final GetStorage _box = GetStorage();
@@ -21,6 +23,9 @@ class QuestionTrainController extends GetxController {
 
   // 记录每道题的开始时间（用于计算答题用时）
   DateTime? _questionStartTime;
+
+  // 计时器上一次 tick 的墙钟时间(退后台/卡顿后按真实流逝时间补扣,防切后台"暂停"考试刷时间)
+  DateTime _lastTickTime = DateTime.now();
 
   // 当前题目列表
   final RxList<Question> questions = <Question>[].obs;
@@ -46,9 +51,6 @@ class QuestionTrainController extends GetxController {
 
   // 收藏操作加载状态
   final RxBool isCollecting = false.obs;
-
-  // 已记录答题日志的题目索引，防止重复记录
-  final Set<int> _loggedQuestionIndices = <int>{};
 
   // 是否显示答案解释
   final RxBool showExplanation = false.obs;
@@ -98,11 +100,20 @@ class QuestionTrainController extends GetxController {
   // 是否已提交 (用于练习模式)
   final RxBool isSubmitted = false.obs;
 
+  /// ★2026-08-14 修复:是否已成功交卷。交卷成功退出后再进入**不弹**继续考试弹窗
+  /// (onClose 不再回写进度);返回退出(未交卷)才保存进度、再进入弹恢复弹窗
+  bool _isExamSubmitted = false;
+
   // 计时器（秒）
   final RxInt elapsedSeconds = 0.obs;
   final RxInt remainingSeconds = 0.obs; // 倒计时秒数
   Timer? _timer; // 使用可空类型，避免late 初始化问题
   int examInitialSeconds = 0; // 考试初始时间（秒）
+
+  // ★2026-08-14 修复:倒计时改用墙钟绝对截止时刻(毫秒精度),机制见 _startTimer 注释
+  DateTime? _countdownEndTime;
+  // 正计时毫秒累计(显示时向下取整,不丢余数)
+  int _elapsedMs = 0;
 
   // 格式化倒计时/正计时
   bool get isCountdownMode {
@@ -112,6 +123,15 @@ class QuestionTrainController extends GetxController {
     if (pageMode.value == 'EXAM') return true;
     // 章节练习（无 paperId）用正计时
     return false;
+  }
+
+  // 是否需要批量提交答题日志:
+  // 仅章节练习/试卷答题/真题答题三类;收藏/错题/搜索/每日一练等本地场景不记录
+  bool get _shouldTrackLog {
+    if (paperId != null) return true; // 试卷/真题
+    if (pageType.isNotEmpty) return false; // 收藏/错题/搜索/页面配置等
+    if (_entryMode == 'prac') return false; // 每日一练
+    return true; // 章节练习
   }
 
   String get timerText {
@@ -141,11 +161,32 @@ class QuestionTrainController extends GetxController {
   // 页面来源类型（普通/收藏/试卷）
   String pageType = ''; // 'favorite' 表示收藏模式
 
+  // 收藏来源类型（collectAdd/collectCancel 传参）:1=章节练习,2=历年真题,3=模拟考试
+  int collectType = 1;
+
   // 试卷信息
   int totalScore = 0;
   int passScore = 0;
   dynamic paperId; // 试卷ID
   dynamic pageConfigId; // 页面配置ID（动态配置模式）
+
+  // ====== 练习会话(practice)批量日志相关 ======
+  // practice_id=0 首次提交,>0 续答(进入时调 practice/detail 回填)
+  int practiceId = 0;
+  // practice/detail 返回的 attempt_count,退出 SAVE 时作为 attempt_no 上报
+  int attemptCount = 0;
+  // 批量日志来源范围:CHAPTER/PAPER_PAST/PAPER_MOCK
+  String sourceScope = 'CHAPTER';
+  // 批量日志来源ID(章节 cate_id / 试卷 paper_id)
+  int sourceId = 0;
+  // 每题累计作答用时(秒),构建批量 answers 用
+  final Map<int, int> _timeSpentByIndex = <int, int>{};
+  // 入口原始 mode 参数(每日一练传 'prac',不记录批量日志)
+  String _entryMode = '';
+  // 题库题目类型(批量日志 question_type 参数,取自入口/章节列表 practice 信息)
+  int _entryQuestionType = 0;
+  // 是否正在批量提交日志(防交卷/退出并发重复提交)
+  bool _logBatchSubmitting = false;
 
   // 获取当前题目
   Question get currentQuestion => questions.isNotEmpty
@@ -188,12 +229,12 @@ class QuestionTrainController extends GetxController {
     isDetailView.value = true;
     showExplanation.value = false;
 
-    print(
+    AppLog.d(
         '🔄🔄🔄 模式从 $oldMode 切换到 $mode (paperId=$paperId, pageType=$pageType) 🔄🔄🔄');
 
     // ====== 场景A：试卷模式切换到背题时重新加载 ======
     if (paperId != null && mode == 'VIEW' && oldMode != 'VIEW') {
-      print('🔄 切换到背题模式，重新加载试卷数据以确保获取答案');
+      AppLog.d('🔄 切换到背题模式，重新加载试卷数据以确保获取答案');
       _reloadForViewMode();
     }
 
@@ -201,12 +242,12 @@ class QuestionTrainController extends GetxController {
     if (pageType == 'favorite') {
       if (mode == 'VIEW') {
         // 收藏→背题：直接切换即可，数据已有完整答案（收藏列表自带 answer 字段）
-        print('📌 收藏模式切换到背题模式');
+        AppLog.d('📌 收藏模式切换到背题模式');
         showExplanation.value = false;
       } else {
         // 收藏→答题：重启计时器
         _ensureTimerRunning();
-        print('📌 收藏模式切换到答题模式 计时器已启动');
+        AppLog.d('📌 收藏模式切换到答题模式 计时器已启动');
       }
     } else {
       // ====== 场景C：普通试卷模式 ======
@@ -230,14 +271,14 @@ class QuestionTrainController extends GetxController {
       if (questions.isNotEmpty) {
         int answerCount =
             questions.where((q) => q.correctAnswers.isNotEmpty).length;
-        print('背题模式重载完成: ${questions.length} $answerCount题有答案');
+        AppLog.d('背题模式重载完成: ${questions.length} $answerCount题有答案');
 
         if (answerCount == 0) {
-          print('⚠️ 警告：所有题目都没有答案数据！接口可能未返回答案字段');
+          AppLog.d('⚠️ 警告：所有题目都没有答案数据！接口可能未返回答案字段');
         }
       }
     } catch (e) {
-      print('背题模式重载失败: $e');
+      AppLog.d('背题模式重载失败: $e');
     } finally {
       isLoading.value = false;
     }
@@ -282,7 +323,7 @@ class QuestionTrainController extends GetxController {
     debugPrint('QuestionTrainController onInit 启动');
     debugPrint('时间: ${DateTime.now()}');
     debugPrint('╚══════════════════════════════════════╝');
-    print(
+    AppLog.d(
         '🚀🚀🚀 QuestionTrainController onInit - NEW CODE LOADED at ${DateTime.now()} 🚀🚀🚀');
 
     // 初始化本地存储状态
@@ -296,7 +337,7 @@ class QuestionTrainController extends GetxController {
         if (paramId != null && paramId.isNotEmpty) {
           // 如果是纯数字字符串，也可以转换为 int，但保留 string 也可以，只要后续处理一即可
           // 这里我们先存args 模拟结构，或者直接使用
-          print('URL Parameters 获取cate_id: $paramId');
+          AppLog.d('URL Parameters 获取cate_id: $paramId');
         }
       }
 
@@ -312,40 +353,54 @@ class QuestionTrainController extends GetxController {
               globalMode == 'EXAM' ||
               globalMode == 'VIEW') {
             pageMode.value = globalMode;
-            print('从全局配置初始化页面模式: ${pageMode.value}');
+            AppLog.d('从全局配置初始化页面模式: ${pageMode.value}');
           } else {
-            print('全局配置模式无效: $globalMode，使用默认值 TRAINING');
+            AppLog.d('全局配置模式无效: $globalMode，使用默认值 TRAINING');
             pageMode.value = 'TRAINING';
           }
         }
       } catch (e) {
-        print('获取全局页面模式失败: $e');
+        AppLog.d('获取全局页面模式失败: $e');
       }
 
       // 如果 pageMode 为空或无效，默认设置为 TRAINING
       if (pageMode.value.isEmpty) {
         pageMode.value = 'TRAINING';
-        print('默认设置页面模式为 TRAINING');
+        AppLog.d('默认设置页面模式为 TRAINING');
       }
 
       // 调试信息
-      print('QuestionTrainController Params: ${Get.parameters}');
+      AppLog.d('QuestionTrainController Params: ${Get.parameters}');
 
       if (args != null && args is Map) {
         // 0. 识别页面来源类型（收藏模式）
         pageType = (args['pageType'] as String?) ?? '';
 
+        // 收藏来源类型:优先取入口显式传参,未传则按 pageType 兜底
+        // 1=章节练习,2=历年真题,3=模拟考试;收藏/错题/搜索等来源不明场景默认 1
+        final typeArg = args['type'];
+        if (typeArg != null) {
+          collectType = int.tryParse(typeArg.toString()) ?? 1;
+        } else if (pageType == 'past' || pageType == 'past_exams') {
+          collectType = 2;
+        } else if (pageType == 'mock' || pageType == 'mock_exams') {
+          collectType = 3;
+        } else {
+          collectType = 1;
+        }
+        AppLog.d('🔖 收藏来源类型 collectType=$collectType (pageType=$pageType)');
+
         // 收藏模式：使用 cate_name 作为标题
         if (pageType == 'favorite') {
           subject = (args['cate_name'] as String?) ?? '收藏题目';
-          print('📌 检测到收藏模式: $subject');
+          AppLog.d('📌 检测到收藏模式: $subject');
         }
 
         // pageConfig 模式：从页面配置ID获取题目
         if (pageType == 'page_config') {
           pageConfigId = args['pageConfigId'];
           subject = (args['title'] as String?) ?? '题目练习';
-          print('🔧 检测到页面配置模式: pageConfigId=$pageConfigId, title=$subject');
+          AppLog.d('🔧 检测到页面配置模式: pageConfigId=$pageConfigId, title=$subject');
         }
 
         // 优先使用传递的 subject，如果没有则尝试使用 title (通常来自试卷列表)
@@ -356,13 +411,15 @@ class QuestionTrainController extends GetxController {
         subsection = (args['subsectionTitle'] as String?) ?? '';
 
         // 2. 如果传递了 mode 参数，覆盖全局配置
+        // 先存原始 mode(每日一练传 'prac' 用于排除批量日志)
+        _entryMode = args['mode']?.toString().trim() ?? '';
         if (args['mode'] != null) {
           final modeStr = args['mode'].toString().trim();
           if (modeStr == 'TRAINING' || modeStr == 'EXAM' || modeStr == 'VIEW') {
             pageMode.value = modeStr;
-            print('从参数初始化页面模式: ${pageMode.value}');
+            AppLog.d('从参数初始化页面模式: ${pageMode.value}');
           } else {
-            print('无效的 mode 参数: $modeStr，保持当前模式 ${pageMode.value}');
+            AppLog.d('无效的 mode 参数: $modeStr，保持当前模式 ${pageMode.value}');
           }
         }
 
@@ -383,7 +440,65 @@ class QuestionTrainController extends GetxController {
             ? args['pass_score']
             : int.tryParse(args['pass_score']?.toString() ?? '0') ?? 0;
         paperId = args['paper_id'];
-        print('🎯 paperId 赋值：$paperId (类型：${paperId.runtimeType})');
+        AppLog.d('🎯 paperId 赋值：$paperId (类型：${paperId.runtimeType})');
+
+        // ====== 练习会话(practice)参数解析 ======
+        // 章节/试卷列表返回 practice 信息,practice_id>0 表示续答(进入后调 practice/detail 回填)
+        try {
+          final practiceRaw = args['practice'];
+          if (practiceRaw is Map) {
+            // 列表 practice 对象的 status: NONE=无记录, FINISHED=已交卷, 其他=练习中(续答)
+            final practiceStatus = practiceRaw['status']?.toString() ?? '';
+            final rawPracticeId =
+                int.tryParse(practiceRaw['practice_id']?.toString() ?? '') ?? 0;
+            attemptCount =
+                int.tryParse(practiceRaw['attempt_count']?.toString() ?? '') ?? 0;
+            _entryQuestionType =
+                int.tryParse(practiceRaw['question_type']?.toString() ?? '') ?? 0;
+            // ★已交卷(FINISHED)的练习:不再续答旧答题卡,按新一轮开始(practice_id=0);
+            // 否则后端 SUBMIT 会判重复交卷(replayed)返回旧结果,列表进度不更新
+            if (practiceStatus == 'FINISHED') {
+              practiceId = 0;
+              AppLog.d('🧾 practice 已交卷(FINISHED),按新一轮开始(practice_id=0)');
+            } else {
+              practiceId = rawPracticeId;
+            }
+          } else {
+            practiceId = int.tryParse(args['practice_id']?.toString() ?? '') ?? 0;
+          }
+        } catch (e) {
+          AppLog.d('解析 practice 参数失败: $e');
+        }
+        if (_entryQuestionType == 0) {
+          _entryQuestionType =
+              int.tryParse(args['question_type']?.toString() ?? '') ??
+                  int.tryParse(Get.parameters['question_type'] ?? '') ??
+                  0;
+        }
+
+        // source_scope:入口已透传则直接用,否则按来源推导
+        final scopeArg = args['source_scope'];
+        if (scopeArg is String && scopeArg.isNotEmpty) {
+          sourceScope = scopeArg;
+        } else if (paperId != null) {
+          sourceScope = pageType == 'past' ? 'PAPER_PAST' : 'PAPER_MOCK';
+        } else {
+          sourceScope = 'CHAPTER';
+        }
+
+        // source_id:入口透传优先,兜底 paper_id / cate_id
+        sourceId = int.tryParse(args['source_id']?.toString() ?? '') ?? 0;
+        if (sourceId == 0 && paperId != null) {
+          sourceId = paperId is int
+              ? paperId
+              : int.tryParse(paperId.toString()) ?? 0;
+        }
+        if (sourceId == 0) {
+          final cateRaw = args['cate_id'] ?? Get.parameters['cate_id'];
+          sourceId = int.tryParse(cateRaw?.toString() ?? '') ?? 0;
+        }
+        AppLog.d(
+            '🧾 practiceId=$practiceId, attemptCount=$attemptCount, sourceScope=$sourceScope, sourceId=$sourceId');
 
         // 初始化倒计时（试卷模式/考试模式）
         if (paperId != null || pageMode.value == 'EXAM') {
@@ -393,17 +508,17 @@ class QuestionTrainController extends GetxController {
           // 如果没有传递 limit_time，默认90分钟(5400秒)
           if (limitTime <= 0) {
             limitTime = 5400;
-            print('⚠️ limit_time 未设置或无效，使用默认值90分钟');
+            AppLog.d('⚠️ limit_time 未设置或无效，使用默认值90分钟');
           }
-          remainingSeconds.value = limitTime;
+          _setRemaining(limitTime);
           examInitialSeconds = limitTime;
         }
 
-        print(
+        AppLog.d(
             '接收到的参数: subject=$subject, chapter=$chapter, mode=${pageMode.value}, paperId=$paperId, remainingSeconds=${remainingSeconds.value}');
       }
     } catch (e) {
-      print('接收参数时出错: $e');
+      AppLog.d('接收参数时出错: $e');
     }
 
     // 启动计时器（所有模式都启动，根据 isCountdownMode 决定是否倒计时）
@@ -426,12 +541,19 @@ class QuestionTrainController extends GetxController {
 
   @override
   void onReady() {
-    print('🚀 QuestionTrainController onReady called');
+    AppLog.d('🚀 QuestionTrainController onReady called');
     super.onReady();
   }
 
   @override
   void onClose() {
+    // 退出页面时保存考试进度(供下次进入恢复)。
+    // ★2026-08-14 修复:交卷成功后不保存(onClose 不再把已删除的进度写回,
+    // 否则下次进入误弹"继续考试");未交卷(返回/失败)退出才保存
+    if (!_isExamSubmitted) {
+      _saveExamProgress();
+    }
+
     // 清理所有定时器（防止内存泄漏）
     _timer?.cancel();
     _timer = null;
@@ -446,7 +568,7 @@ class QuestionTrainController extends GetxController {
 
   // 加载题目数据
   Future<void> _loadQuestions() async {
-    print(
+    AppLog.d(
         '📚 _loadQuestions 开始加载题目数据, paperId=$paperId, pageMode=${pageMode.value}');
     isLoading.value = true;
     errorMessage.value = '';
@@ -460,7 +582,7 @@ class QuestionTrainController extends GetxController {
 
       // 检查是否从 paper_id 加载（真题模式）
       if (paperId != null) {
-        print('📝 paperId 加载试题: $paperId');
+        AppLog.d('📝 paperId 加载试题: $paperId');
         await _loadQuestionsFromPaper(paperId);
         return;
       }
@@ -468,15 +590,15 @@ class QuestionTrainController extends GetxController {
       // 1. 优先从 URL Parameters 获取 cate_id
       if (Get.parameters.containsKey('cate_id')) {
         cateId = Get.parameters['cate_id'];
-        print('QuestionTrainController: Got cate_id from parameters: $cateId');
+        AppLog.d('QuestionTrainController: Got cate_id from parameters: $cateId');
       }
       if (Get.parameters.containsKey('question_type')) {
         questionType = Get.parameters['question_type'];
-        print(
+        AppLog.d(
             'QuestionTrainController: Got question_type from parameters: $questionType');
       }
 
-      print('QuestionTrainController _loadQuestions args: $args');
+      AppLog.d('QuestionTrainController _loadQuestions args: $args');
 
       if (cateId == null && args != null && args is Map) {
         // 2. 其次获取明确传递的 cate_id (arguments)
@@ -501,11 +623,11 @@ class QuestionTrainController extends GetxController {
         questionType ??= args['question_type'] ?? args['questionType'];
       }
 
-      print('Parsed cate_id: $cateId (Type: ${cateId.runtimeType})');
+      AppLog.d('Parsed cate_id: $cateId (Type: ${cateId.runtimeType})');
 
       // 收藏/错题模式：直接从传入的 items 列表构建题目，不需 cate_id
       if ((pageType == 'favorite' || pageType == 'wrong') && cateId == null) {
-        print('📌 ${pageType == 'favorite' ? '收藏' : '错题'}模式：从 args.items 加载题目');
+        AppLog.d('📌 ${pageType == 'favorite' ? '收藏' : '错题'}模式：从 args.items 加载题目');
         if (pageType == 'wrong') {
           await _loadQuestionsFromWrong();
         } else {
@@ -516,14 +638,14 @@ class QuestionTrainController extends GetxController {
 
       // 搜索模式：直接从传入的 items（搜索接口返回的原始题目）构建题目
       if (pageType == 'search') {
-        print('🔍 搜索模式：从 args.items 加载题目');
+        AppLog.d('🔍 搜索模式：从 args.items 加载题目');
         await _loadQuestionsFromSearch();
         return;
       }
 
       // 页面配置模式：通过 pageConfigId 获取题目
       if (pageType == 'page_config' && pageConfigId != null) {
-        print('🔧 页面配置模式：通过 pageConfigId=$pageConfigId 获取题目');
+        AppLog.d('🔧 页面配置模式：通过 pageConfigId=$pageConfigId 获取题目');
         await _loadQuestionsFromPageConfig();
         return;
       }
@@ -532,7 +654,7 @@ class QuestionTrainController extends GetxController {
       final isPracMode = (args?['mode']?.toString() ?? '') == 'prac';
 
       if (cateId == null && !isPracMode) {
-        print('⚠️ 参数错误：cate_id 为空，无法发起请求');
+        AppLog.d('⚠️ 参数错误：cate_id 为空，无法发起请求');
         errorMessage.value = '参数错误：无法获取章节ID';
         isLoading.value = false;
         return;
@@ -562,27 +684,27 @@ class QuestionTrainController extends GetxController {
         queryParams['mode'] = 'exam';
       }
 
-      print('Requesting questions with params: $queryParams');
+      AppLog.d('Requesting questions with params: $queryParams');
 
       final response = await ApiClient.to.getExam(
         'question/train',
         queryParameters: queryParams,
       );
 
-      print('API Response Status: ${response.statusCode}');
-      print('API Response Data: ${response.data}');
+      AppLog.d('API Response Status: ${response.statusCode}');
+      AppLog.d('API Response Data: ${response.data}');
 
       if (response.statusCode == 200) {
         var data = response.data;
-        print('Raw Response Data Type: ${data.runtimeType}');
+        AppLog.d('Raw Response Data Type: ${data.runtimeType}');
 
         // 处理 String 类型的响应数据
         if (data is String) {
           try {
             data = jsonDecode(data);
-            print('Decoded JSON Data: $data');
+            AppLog.d('Decoded JSON Data: $data');
           } catch (e) {
-            print('JSON decode error: $e');
+            AppLog.d('JSON decode error: $e');
           }
         }
 
@@ -592,7 +714,7 @@ class QuestionTrainController extends GetxController {
 
         if (data is Map && isSuccess) {
           final responseData = data['data'];
-          print('Response Data Field: $responseData');
+          AppLog.d('Response Data Field: $responseData');
 
           List<dynamic> rawQuestions = [];
 
@@ -602,7 +724,7 @@ class QuestionTrainController extends GetxController {
             rawQuestions = responseData;
           }
 
-          print('Raw Questions Count: ${rawQuestions.length}');
+          AppLog.d('Raw Questions Count: ${rawQuestions.length}');
 
           if (rawQuestions.isEmpty) {
             errorMessage.value = '暂无题目数据';
@@ -612,7 +734,7 @@ class QuestionTrainController extends GetxController {
               try {
                 parsedQuestions.add(_parseQuestion(q));
               } catch (e) {
-                print('Error parsing question: $e, Data: $q');
+                AppLog.d('Error parsing question: $e, Data: $q');
               }
             }
 
@@ -624,6 +746,8 @@ class QuestionTrainController extends GetxController {
               _initFavoriteStatus();
               // 跳转到第一个未做过的题
               _jumpToFirstUndoneQuestion();
+              // practice_id>0 时拉取练习记录详情,回填上次作答并续答
+              _maybeRestorePractice();
             }
           }
         } else {
@@ -634,7 +758,7 @@ class QuestionTrainController extends GetxController {
         errorMessage.value = '网络请求失败: ${response.statusCode}';
       }
     } catch (e) {
-      print('Error loading questions: $e');
+      AppLog.d('Error loading questions: $e');
       errorMessage.value = '加载题目出错，请稍后重试';
     } finally {
       isLoading.value = false;
@@ -643,11 +767,11 @@ class QuestionTrainController extends GetxController {
 
   // ====== 从页面配置ID加载题目（动态配置模式）======
   Future<void> _loadQuestionsFromPageConfig() async {
-    print('🔧 ===== _loadQuestionsFromPageConfig 开始 =====');
-    print('🔧 pageConfigId=$pageConfigId, pageMode=${pageMode.value}');
+    AppLog.d('🔧 ===== _loadQuestionsFromPageConfig 开始 =====');
+    AppLog.d('🔧 pageConfigId=$pageConfigId, pageMode=${pageMode.value}');
 
     if (pageConfigId == null) {
-      print('⚠️ 参数错误：pageConfigId 为空');
+      AppLog.d('⚠️ 参数错误：pageConfigId 为空');
       errorMessage.value = '页面配置 ID 为空';
       isLoading.value = false;
       return;
@@ -659,7 +783,7 @@ class QuestionTrainController extends GetxController {
         queryParameters: {'id': pageConfigId},
       );
 
-      print('🔧 getQuestionsByPageConfig 返回: ${response.statusCode}');
+      AppLog.d('🔧 getQuestionsByPageConfig 返回: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = response.data;
@@ -672,9 +796,9 @@ class QuestionTrainController extends GetxController {
 
           if (questionsRaw.isEmpty) {
             errorMessage.value = '暂无题目数据';
-            print('⚠️ 页面配置返回题目为空');
+            AppLog.d('⚠️ 页面配置返回题目为空');
           } else {
-            print('🔧 获取 ${questionsRaw.length} 道题目');
+            AppLog.d('🔧 获取 ${questionsRaw.length} 道题目');
 
             final parsedQuestions = <Question>[];
             for (var q in questionsRaw) {
@@ -683,7 +807,7 @@ class QuestionTrainController extends GetxController {
                 final qMap = Map<String, dynamic>.from(q);
                 parsedQuestions.add(_parseQuestion(qMap));
               } catch (e) {
-                print('⚠️ 解析单题失败: $e, 数据: ${q.keys}');
+                AppLog.d('⚠️ 解析单题失败: $e, 数据: ${q.keys}');
               }
             }
 
@@ -693,7 +817,7 @@ class QuestionTrainController extends GetxController {
               // 跳转到第一个未做过的题
               _jumpToFirstUndoneQuestion();
               _ensureTimerRunning();
-              print('🔧 页面配置题目加载完成: ${parsedQuestions.length} 道题目');
+              AppLog.d('🔧 页面配置题目加载完成: ${parsedQuestions.length} 道题目');
             } else {
               errorMessage.value = '题目数据解析失败';
             }
@@ -706,15 +830,15 @@ class QuestionTrainController extends GetxController {
             msg = '该功能仅针对会员开放，请开通会员后再试';
           }
           errorMessage.value = msg;
-          print('⚠️ API返回错误: $msg');
+          AppLog.d('⚠️ API返回错误: $msg');
         }
       } else {
         errorMessage.value = '网络请求失败: ${response.statusCode}';
-        print('⚠️ 网络请求失败: ${response.statusCode}');
+        AppLog.d('⚠️ 网络请求失败: ${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      print('🔧 _loadQuestionsFromPageConfig 错误: $e');
-      print('堆栈: $stackTrace');
+      AppLog.d('🔧 _loadQuestionsFromPageConfig 错误: $e');
+      AppLog.d('堆栈: $stackTrace');
       errorMessage.value = '加载页面配置题目失败: $e';
     } finally {
       isLoading.value = false;
@@ -724,11 +848,11 @@ class QuestionTrainController extends GetxController {
   // ====== 从试卷ID加载题目（真题模式）======
   // 根据 pageMode 决定是否请求带答案的数据
   Future<void> _loadQuestionsFromPaper(dynamic paperId) async {
-    print(
+    AppLog.d(
         '📝📝📝📝📝 _loadQuestionsFromPaper 被调用！！！ paperId=$paperId, pageMode=${pageMode.value} 📝📝📝📝📝');
 
     if (paperId == null) {
-      print('⚠️ paperId 为空，无法加载试题');
+      AppLog.d('⚠️ paperId 为空，无法加载试题');
       errorMessage.value = '试卷 ID 为空';
       isLoading.value = false;
       return;
@@ -740,8 +864,8 @@ class QuestionTrainController extends GetxController {
 
       // 始终请求带答案的数据（包括正确答案和解析）
       // 答案的显示隐藏由前端UI 层根pageMode showExplanation 控制，而非接口层面限制
-      print('🌐 请求 API: paper/getExamQuestion');
-      print('参数：paper_id=$paperId, timestamp=$timestamp, show_answer=1(始终)');
+      AppLog.d('🌐 请求 API: paper/getExamQuestion');
+      AppLog.d('参数：paper_id=$paperId, timestamp=$timestamp, show_answer=1(始终)');
 
       final Map<String, dynamic> queryParams = {
         'paper_id': paperId,
@@ -754,8 +878,8 @@ class QuestionTrainController extends GetxController {
         queryParameters: queryParams,
       );
 
-      print('API Response Status: ${response.statusCode}');
-      print('API Response Data: ${response.data}');
+      AppLog.d('API Response Status: ${response.statusCode}');
+      AppLog.d('API Response Data: ${response.data}');
 
       if (response.statusCode == 200) {
         var data = response.data;
@@ -764,9 +888,9 @@ class QuestionTrainController extends GetxController {
         if (data is String) {
           try {
             data = jsonDecode(data);
-            print('Decoded JSON Data: $data');
+            AppLog.d('Decoded JSON Data: $data');
           } catch (e) {
-            print('JSON decode error: $e');
+            AppLog.d('JSON decode error: $e');
           }
         }
 
@@ -776,7 +900,7 @@ class QuestionTrainController extends GetxController {
 
         if (data is Map && isSuccess) {
           final responseData = data['data'];
-          print('Response Data Field: $responseData');
+          AppLog.d('Response Data Field: $responseData');
 
           // ====== 从接口响应中提取试卷配置（含 limit_time）=====
           _extractPaperConfigFromResponse(responseData);
@@ -788,53 +912,57 @@ class QuestionTrainController extends GetxController {
             // 优先检查 questions 字段（来paper API）
             if (responseData.containsKey('questions')) {
               rawQuestions = responseData['questions'];
-              print('从 questions 字段获取题目');
+              AppLog.d('从 questions 字段获取题目');
             } else if (responseData.containsKey('list')) {
               rawQuestions = responseData['list'];
-              print('从 list 字段获取题目');
+              AppLog.d('从 list 字段获取题目');
             } else if (responseData.containsKey('paper') &&
                 responseData['paper'] is Map) {
               // 有些 API 返回的是 { paper: {...}, questions: [...] }
               final paperData = responseData['paper'];
               if (paperData is Map && paperData.containsKey('questions')) {
                 rawQuestions = paperData['questions'];
-                print('从 paper.questions 字段获取题目');
+                AppLog.d('从 paper.questions 字段获取题目');
               }
             }
           } else if (responseData is List) {
             rawQuestions = responseData;
-            print('直接从 responseData 获取题目');
+            AppLog.d('直接从 responseData 获取题目');
           }
 
-          print('Raw Questions Count: ${rawQuestions.length}');
+          AppLog.d('Raw Questions Count: ${rawQuestions.length}');
 
           if (rawQuestions.isEmpty) {
             errorMessage.value = '暂无题目数据';
-            print('未找到题目数');
+            AppLog.d('未找到题目数');
           } else {
             final parsedQuestions = <Question>[];
             for (var q in rawQuestions) {
               try {
-                print('📝 解析题目 ${q['title']}');
+                AppLog.d('📝 解析题目 ${q['title']}');
                 parsedQuestions.add(_parseQuestionFromPaper(q));
               } catch (e) {
-                print('Error parsing question: $e, Data: $q');
+                AppLog.d('Error parsing question: $e, Data: $q');
               }
             }
 
             if (parsedQuestions.isEmpty) {
               errorMessage.value = '题目数据解析失败';
-              print('题目解析后为空');
+              AppLog.d('题目解析后为空');
             } else {
               questions.assignAll(parsedQuestions);
               // 初始化收藏状态
               _initFavoriteStatus();
               // 跳转到第一个未做过的题目
               _jumpToFirstUndoneQuestion();
-              print('成功加载 ${parsedQuestions.length} 道题');
+              // ★检测上次未完成的考试进度(EXAM 试卷模式):弹窗询问继续/放弃
+              _maybeRestoreExamProgress(paperId);
+              // practice_id>0 时拉取练习记录详情,回填上次作答并续答
+              _maybeRestorePractice();
+              AppLog.d('成功加载 ${parsedQuestions.length} 道题');
               if (parsedQuestions.isNotEmpty) {
                 final firstQ = parsedQuestions[0];
-                print(
+                AppLog.d(
                     '📋 第一道题解析结果: answer=${firstQ.answer}, correctAnswers=${firstQ.correctAnswers}');
               }
             }
@@ -842,14 +970,14 @@ class QuestionTrainController extends GetxController {
         } else {
           errorMessage.value =
               data is Map ? (data['msg'] ?? '获取题目失败') : '数据格式错误';
-          print('获取题目失败 ${errorMessage.value}');
+          AppLog.d('获取题目失败 ${errorMessage.value}');
         }
       } else {
         errorMessage.value = '网络请求失败 ${response.statusCode}';
-        print('网络请求失败 ${response.statusCode}');
+        AppLog.d('网络请求失败 ${response.statusCode}');
       }
     } catch (e) {
-      print('Error loading questions from paper: $e');
+      AppLog.d('Error loading questions from paper: $e');
       errorMessage.value = '加载题目出错，请稍后重试';
     } finally {
       isLoading.value = false;
@@ -858,28 +986,28 @@ class QuestionTrainController extends GetxController {
 
   // ====== 从收藏列表加载题目（收藏模式）=====
   Future<void> _loadQuestionsFromFavorite() async {
-    print('📌 ===== _loadQuestionsFromFavorite 开始 =====');
-    print('📌 pageType=$pageType, pageMode=${pageMode.value}');
+    AppLog.d('📌 ===== _loadQuestionsFromFavorite 开始 =====');
+    AppLog.d('📌 pageType=$pageType, pageMode=${pageMode.value}');
 
     try {
       final dynamic args = Get.arguments;
       if (args is! Map) {
-        print('args 不是 Map: ${args.runtimeType}');
+        AppLog.d('args 不是 Map: ${args.runtimeType}');
         errorMessage.value = '收藏参数异常';
         return;
       }
 
       final itemsRaw = args['items'];
-      print(
+      AppLog.d(
           '📌 itemsRaw 类型: ${itemsRaw.runtimeType}, 数量: ${itemsRaw is List ? itemsRaw.length : "N/A"}');
 
       if (itemsRaw is! List || itemsRaw.isEmpty) {
-        print('items 为空或不是列表');
+        AppLog.d('items 为空或不是列表');
         errorMessage.value = '暂无收藏题目';
         return;
       }
 
-      print('📌 收藏题目数量: ${itemsRaw.length}');
+      AppLog.d('📌 收藏题目数量: ${itemsRaw.length}');
       final parsedQuestions = <Question>[];
 
       int parseSuccessCount = 0;
@@ -963,19 +1091,19 @@ class QuestionTrainController extends GetxController {
         String kind = kindStr.toUpperCase().trim();
         if (kind.isEmpty) kind = 'SINGLE';
 
-        print(
+        AppLog.d(
             '📌 题[$idx]: id=$questionId, kind=$kind, answer=$answer, optType=${rawOptionsJson?.runtimeType}');
-        print(
+        AppLog.d(
             '📌 题[$idx]: title="${title.length > 50 ? title.substring(0, 50) : title}"');
 
         // ====== 解析选项 ======
         List<String> options =
             _parseOptionsWithImages(rawOptionsJson, rawOptionsImg, kind);
-        print('📌 题[$idx] 最终选项(${options.length}): $options');
+        AppLog.d('📌 题[$idx] 最终选项(${options.length}): $options');
 
         // ====== 计算正确答案索引 ======
         final correctAnswers = _parseAnswerToIndices(answer, options);
-        print('📌 题[$idx] correctAnswers: $correctAnswers');
+        AppLog.d('📌 题[$idx] correctAnswers: $correctAnswers');
 
         // ====== 映射 kind 到 type 字符串 ======
         String type = 'single';
@@ -1004,7 +1132,7 @@ class QuestionTrainController extends GetxController {
         parseSuccessCount++;
       }
 
-      print('📌 ===== 解析完成: 成功=$parseSuccessCount/${itemsRaw.length} =====');
+      AppLog.d('📌 ===== 解析完成: 成功=$parseSuccessCount/${itemsRaw.length} =====');
 
       if (parsedQuestions.isEmpty) {
         errorMessage.value = '题目数据解析失败';
@@ -1018,11 +1146,11 @@ class QuestionTrainController extends GetxController {
         // 收藏模式：确保计时器运行
         _ensureTimerRunning();
 
-        print('📌 ===== 收藏题目加载完成: ${parsedQuestions.length} =====');
+        AppLog.d('📌 ===== 收藏题目加载完成: ${parsedQuestions.length} =====');
       }
     } catch (e, stackTrace) {
-      print('_loadQuestionsFromFavorite 错误: $e');
-      print('堆栈: $stackTrace');
+      AppLog.d('_loadQuestionsFromFavorite 错误: $e');
+      AppLog.d('堆栈: $stackTrace');
       errorMessage.value = '加载收藏题目失败: $e';
     } finally {
       isLoading.value = false;
@@ -1031,28 +1159,28 @@ class QuestionTrainController extends GetxController {
 
   // ====== 从错题列表加载题目（错题模式）逻辑与收藏模式一致
   Future<void> _loadQuestionsFromWrong() async {
-    print('📌 ===== _loadQuestionsFromWrong 开始 =====');
-    print('📌 pageType=$pageType, pageMode=${pageMode.value}');
+    AppLog.d('📌 ===== _loadQuestionsFromWrong 开始 =====');
+    AppLog.d('📌 pageType=$pageType, pageMode=${pageMode.value}');
 
     try {
       final dynamic args = Get.arguments;
       if (args is! Map) {
-        print('args 不是 Map: ${args.runtimeType}');
+        AppLog.d('args 不是 Map: ${args.runtimeType}');
         errorMessage.value = '错题参数异常';
         return;
       }
 
       final itemsRaw = args['items'];
-      print(
+      AppLog.d(
           '📌 itemsRaw 类型: ${itemsRaw.runtimeType}, 数量: ${itemsRaw is List ? itemsRaw.length : "N/A"}');
 
       if (itemsRaw is! List || itemsRaw.isEmpty) {
-        print('itemsRaw 为空或不是列表');
+        AppLog.d('itemsRaw 为空或不是列表');
         errorMessage.value = '暂无错题';
         return;
       }
 
-      print('📌 错题数量: ${itemsRaw.length}');
+      AppLog.d('📌 错题数量: ${itemsRaw.length}');
       final parsedQuestions = <Question>[];
 
       int parseSuccessCount = 0;
@@ -1110,7 +1238,7 @@ class QuestionTrainController extends GetxController {
         parseSuccessCount++;
       }
 
-      print('📌 ===== 解析完成: 成功=$parseSuccessCount/${itemsRaw.length} =====');
+      AppLog.d('📌 ===== 解析完成: 成功=$parseSuccessCount/${itemsRaw.length} =====');
 
       if (parsedQuestions.isEmpty) {
         errorMessage.value = '题目数据解析失败';
@@ -1120,11 +1248,11 @@ class QuestionTrainController extends GetxController {
         // 跳转到第一个未做过的题目
         _jumpToFirstUndoneQuestion();
         _ensureTimerRunning();
-        print('📌 ===== 错题加载完成: ${parsedQuestions.length} =====');
+        AppLog.d('📌 ===== 错题加载完成: ${parsedQuestions.length} =====');
       }
     } catch (e, stackTrace) {
-      print('_loadQuestionsFromWrong 错误: $e');
-      print('堆栈: $stackTrace');
+      AppLog.d('_loadQuestionsFromWrong 错误: $e');
+      AppLog.d('堆栈: $stackTrace');
       errorMessage.value = '加载错题失败: $e';
     } finally {
       isLoading.value = false;
@@ -1134,28 +1262,28 @@ class QuestionTrainController extends GetxController {
   // ====== 从搜索结果加载题目（搜索模式）======
   // items 为搜索接口返回的原始题目数据，复用收藏/错题模式的解析思路
   Future<void> _loadQuestionsFromSearch() async {
-    print('🔍 ===== _loadQuestionsFromSearch 开始 =====');
-    print('🔍 pageType=$pageType, pageMode=${pageMode.value}');
+    AppLog.d('🔍 ===== _loadQuestionsFromSearch 开始 =====');
+    AppLog.d('🔍 pageType=$pageType, pageMode=${pageMode.value}');
 
     try {
       final dynamic args = Get.arguments;
       if (args is! Map) {
-        print('args 不是 Map: ${args.runtimeType}');
+        AppLog.d('args 不是 Map: ${args.runtimeType}');
         errorMessage.value = '搜索参数异常';
         return;
       }
 
       final itemsRaw = args['items'];
-      print(
+      AppLog.d(
           '🔍 itemsRaw 类型: ${itemsRaw.runtimeType}, 数量: ${itemsRaw is List ? itemsRaw.length : "N/A"}');
 
       if (itemsRaw is! List || itemsRaw.isEmpty) {
-        print('items 为空或不是列表');
+        AppLog.d('items 为空或不是列表');
         errorMessage.value = '暂无题目数据';
         return;
       }
 
-      print('🔍 搜索题目数量: ${itemsRaw.length}');
+      AppLog.d('🔍 搜索题目数量: ${itemsRaw.length}');
       final parsedQuestions = <Question>[];
       int parseSuccessCount = 0;
 
@@ -1187,17 +1315,17 @@ class QuestionTrainController extends GetxController {
         final rawOptionsJson = itemMap['options_json'];
         final rawOptionsImg = itemMap['options_img'];
 
-        print(
+        AppLog.d(
             '🔍 题[$idx]: id=$questionId, kind=$kind, answer=$answer, optType=${rawOptionsJson?.runtimeType}');
 
         // ====== 解析选项 ======
         List<String> options =
             _parseOptionsWithImages(rawOptionsJson, rawOptionsImg, kind);
-        print('🔍 题[$idx] 最终选项(${options.length}): $options');
+        AppLog.d('🔍 题[$idx] 最终选项(${options.length}): $options');
 
         // ====== 计算正确答案索引 ======
         final correctAnswers = _parseAnswerToIndices(answer, options);
-        print('🔍 题[$idx] correctAnswers: $correctAnswers');
+        AppLog.d('🔍 题[$idx] correctAnswers: $correctAnswers');
 
         // ====== 映射 kind 到 type 字段字符串 ======
         String type = 'single';
@@ -1241,7 +1369,7 @@ class QuestionTrainController extends GetxController {
         parseSuccessCount++;
       }
 
-      print('🔍 ===== 解析完成: 成功=$parseSuccessCount/${itemsRaw.length} =====');
+      AppLog.d('🔍 ===== 解析完成: 成功=$parseSuccessCount/${itemsRaw.length} =====');
 
       if (parsedQuestions.isEmpty) {
         errorMessage.value = '题目数据解析失败';
@@ -1252,11 +1380,11 @@ class QuestionTrainController extends GetxController {
         _jumpToFirstUndoneQuestion();
         // 搜索模式：确保计时器运行
         _ensureTimerRunning();
-        print('🔍 ===== 搜索题目加载完成: ${parsedQuestions.length} =====');
+        AppLog.d('🔍 ===== 搜索题目加载完成: ${parsedQuestions.length} =====');
       }
     } catch (e, stackTrace) {
-      print('_loadQuestionsFromSearch 错误: $e');
-      print('堆栈: $stackTrace');
+      AppLog.d('_loadQuestionsFromSearch 错误: $e');
+      AppLog.d('堆栈: $stackTrace');
       errorMessage.value = '加载搜索题目失败: $e';
     } finally {
       isLoading.value = false;
@@ -1293,7 +1421,7 @@ class QuestionTrainController extends GetxController {
     }
 
     if (merged.isNotEmpty) {
-      print('🔍 _parseOptionsWithImages: 合并图片选项 ${merged.length} 个');
+      AppLog.d('🔍 _parseOptionsWithImages: 合并图片选项 ${merged.length} 个');
       return merged;
     }
 
@@ -1318,7 +1446,7 @@ class QuestionTrainController extends GetxController {
         final value = _extractOptionValue(item);
         result[key] = value;
       }
-      print('🔍 _parseOptionsMapDynamic: 从List提取 ${result.length} 个选项');
+      AppLog.d('🔍 _parseOptionsMapDynamic: 从List提取 ${result.length} 个选项');
       if (result.values.any((v) => v.trim().isNotEmpty)) return result;
     }
 
@@ -1331,7 +1459,7 @@ class QuestionTrainController extends GetxController {
       return {'A': '正确', 'B': '错误'};
     }
 
-    print(
+    AppLog.d(
         '⚠️ _parseOptionsMapDynamic: 无法解析选项, type=${rawOpt?.runtimeType}, kind=$kind');
     return result;
   }
@@ -1446,7 +1574,7 @@ class QuestionTrainController extends GetxController {
           if (decoded is List) return _extractValuesFromList(decoded);
         }
       } catch (e) {
-        print('⚠️ _tryParseOptionsString: 格式修复也失败 $e');
+        AppLog.d('⚠️ _tryParseOptionsString: 格式修复也失败 $e');
       }
     }
 
@@ -1512,7 +1640,7 @@ class QuestionTrainController extends GetxController {
 
       return result.toString();
     } catch (e) {
-      print('⚠️ _fixDartToStringFormat 异常: $e');
+      AppLog.d('⚠️ _fixDartToStringFormat 异常: $e');
       return null;
     }
   }
@@ -1539,7 +1667,7 @@ class QuestionTrainController extends GetxController {
         if (str.isNotEmpty) opts.add(str);
       }
     }
-    print('🔍 _extractValuesFromList: 提取 ${opts.length} 个选项');
+    AppLog.d('🔍 _extractValuesFromList: 提取 ${opts.length} 个选项');
     return opts;
   }
 
@@ -1561,7 +1689,7 @@ class QuestionTrainController extends GetxController {
     }
 
     if (results.isNotEmpty) {
-      print('🔍 _regexExtractValues: 用正则提取 ${results.length} 个选项');
+      AppLog.d('🔍 _regexExtractValues: 用正则提取 ${results.length} 个选项');
     }
     return results;
   }
@@ -1591,7 +1719,7 @@ class QuestionTrainController extends GetxController {
           if (opts.isNotEmpty) return opts;
         }
       } catch (e) {
-        print('⚠️ options_json JSON解析失败: $e, 原始长度: ${optionsJsonStr.length}');
+        AppLog.d('⚠️ options_json JSON解析失败: $e, 原始长度: ${optionsJsonStr.length}');
       }
     }
 
@@ -1601,7 +1729,7 @@ class QuestionTrainController extends GetxController {
     }
 
     // 非判断题但无选项数据 返回UI 会显示"暂无选项"）
-    print('⚠️ 无法解析选项，kind=$kind, answer=$answer');
+    AppLog.d('⚠️ 无法解析选项，kind=$kind, answer=$answer');
     return [];
   }
 
@@ -1628,7 +1756,7 @@ class QuestionTrainController extends GetxController {
   /// 确保计时器正在运行
   void _ensureTimerRunning() {
     if (_timer == null || !_timer!.isActive) {
-      print('📌 启动计时器（当前模式: ${pageMode.value}, 倒计时: $isCountdownMode）');
+      AppLog.d('📌 启动计时器（当前模式: ${pageMode.value}, 倒计时: $isCountdownMode）');
       _startTimer();
     }
   }
@@ -1658,14 +1786,14 @@ class QuestionTrainController extends GetxController {
                 passScore;
       }
 
-      print(
+      AppLog.d(
           '📄 paper 字段提取配置: limit_time=$limitTimeSource, total_score=$totalScore, pass_score=$passScore');
     }
 
     // 其次尝试直接从 response data 获取
     if (limitTimeSource == null && responseData.containsKey('limit_time')) {
       limitTimeSource = responseData['limit_time'];
-      print('📄 response data 提取 limit_time: $limitTimeSource');
+      AppLog.d('📄 response data 提取 limit_time: $limitTimeSource');
     }
 
     // 解析并更新倒计时
@@ -1680,11 +1808,11 @@ class QuestionTrainController extends GetxController {
       }
 
       if (apiLimitTime > 0) {
-        remainingSeconds.value = apiLimitTime;
+        _setRemaining(apiLimitTime);
         examInitialSeconds = apiLimitTime;
-        print('倒计时已更新为接口返回值 ${apiLimitTime}秒(${apiLimitTime ~/ 60}分钟)');
+        AppLog.d('倒计时已更新为接口返回值 ${apiLimitTime}秒(${apiLimitTime ~/ 60}分钟)');
       } else {
-        print(
+        AppLog.d(
             '⚠️ 接口返回 limit_time 无效: $limitTimeSource，保持当前值 $remainingSeconds.value');
       }
     }
@@ -1715,7 +1843,7 @@ class QuestionTrainController extends GetxController {
 
     // ====== 简答题特殊处理 ======
     if (kind == 'SHORT') {
-      print('🔍[$questionId] 检测到简答题，跳过选项解析');
+      AppLog.d('🔍[$questionId] 检测到简答题，跳过选项解析');
 
       // 解析解析（支持更多字段名）
       final explanation = json['explain']?.toString() ??
@@ -1790,7 +1918,7 @@ class QuestionTrainController extends GetxController {
     final options =
         _parseOptionsWithImages(rawOptions, json['options_img'], kind);
 
-    print(
+    AppLog.d(
         '🔍[$questionId] 最终选项: ${options.isEmpty ? "⚠️ 空！" : options} (kind=$kind, 原始options类型=${json['options']?.runtimeType}, options_json类型=${json['options_json']?.runtimeType})');
 
     // ====== 增强的答案解析逻辑 ======
@@ -1811,7 +1939,7 @@ class QuestionTrainController extends GetxController {
       if (json.containsKey(fieldName) &&
           json[fieldName]?.toString().isNotEmpty == true) {
         answerStr = json[fieldName]!.toString();
-        print('🔍[$questionId] 从字段 "$fieldName" 找到答案: $answerStr');
+        AppLog.d('🔍[$questionId] 从字段 "$fieldName" 找到答案: $answerStr');
         break;
       }
     }
@@ -1824,11 +1952,11 @@ class QuestionTrainController extends GetxController {
             json['answer_object']['answer']?.toString() ??
             '';
         if (answerStr.isNotEmpty)
-          print('🔍[$questionId] answer_object 获取答案: $answerStr');
+          AppLog.d('🔍[$questionId] answer_object 获取答案: $answerStr');
       }
     }
 
-    print(
+    AppLog.d(
         '🔍 解析题目[$questionId] 答案: raw="$answerStr", 所有字段keys=${json.keys.toList()}');
 
     if (answerStr.isNotEmpty) {
@@ -1858,7 +1986,7 @@ class QuestionTrainController extends GetxController {
 
     // 3. 如果还没找到答案，尝试从选项中提取（通过 is_right/is_correct 标记）
     if (correctAnswers.isEmpty && options.isNotEmpty) {
-      print('🔍[$questionId] 尝试从选项中提取答案 options原始数据: ${json['options']}');
+      AppLog.d('🔍[$questionId] 尝试从选项中提取答案 options原始数据: ${json['options']}');
 
       // 先检查 options 数组
       if (json['options'] is List) {
@@ -1872,7 +2000,7 @@ class QuestionTrainController extends GetxController {
                 opt['correct'] == 1;
             if (isRight) {
               correctAnswers.add(optIndex);
-              print('🔍[$questionId] 选项$optIndex 标记为正确答案');
+              AppLog.d('🔍[$questionId] 选项$optIndex 标记为正确答案');
             }
           }
           optIndex++;
@@ -1899,16 +2027,16 @@ class QuestionTrainController extends GetxController {
       if (correctAnswers.isNotEmpty) {
         answerStr =
             correctAnswers.map((i) => String.fromCharCode(65 + i)).join(',');
-        print('🔍[$questionId] 从选项中提取到答案: $answerStr');
+        AppLog.d('🔍[$questionId] 从选项中提取到答案: $answerStr');
       }
     }
 
     // 4. 最后的诊断日志
     if (correctAnswers.isEmpty) {
-      print('⚠️[$questionId] ⚠️ 未找到任何答案数据！题目可能缺少答案字段');
-      print('⚠️[$questionId] 完整JSON数据: $json');
+      AppLog.d('⚠️[$questionId] ⚠️ 未找到任何答案数据！题目可能缺少答案字段');
+      AppLog.d('⚠️[$questionId] 完整JSON数据: $json');
     } else {
-      print('✅[$questionId] 成功解析答案: $answerStr -> indices=$correctAnswers');
+      AppLog.d('✅[$questionId] 成功解析答案: $answerStr -> indices=$correctAnswers');
     }
 
     // 解析解析（支持更多字段名）
@@ -1972,7 +2100,7 @@ class QuestionTrainController extends GetxController {
 
     // ====== 简答题特殊处理 ======
     if (kind == 'SHORT') {
-      print('🔍[$questionId] 检测到简答题，跳过选项解析');
+      AppLog.d('🔍[$questionId] 检测到简答题，跳过选项解析');
 
       // 解析 question_status
       int? questionStatus;
@@ -1998,7 +2126,7 @@ class QuestionTrainController extends GetxController {
         if (json.containsKey(fieldName) && json[fieldName] != null) {
           userAnswerStr = json[fieldName].toString();
           if (userAnswerStr.isNotEmpty) {
-            print('🔍[$questionId] 从字段 "$fieldName" 找到用户答案: $userAnswerStr');
+            AppLog.d('🔍[$questionId] 从字段 "$fieldName" 找到用户答案: $userAnswerStr');
             break;
           }
         }
@@ -2064,7 +2192,7 @@ class QuestionTrainController extends GetxController {
     final options =
         _parseOptionsWithImages(rawOptions, json['options_img'], kind);
 
-    print('🔍[$questionId] 最终选项: ${options.isEmpty ? "⚠️ 空！" : options}');
+    AppLog.d('🔍[$questionId] 最终选项: ${options.isEmpty ? "⚠️ 空！" : options}');
 
     // ====== 解析答案（增强版：兼容多种数据格式）======
     List<int> correctAnswers = [];
@@ -2084,7 +2212,7 @@ class QuestionTrainController extends GetxController {
       if (json.containsKey(fieldName) &&
           json[fieldName]?.toString().isNotEmpty == true) {
         answerStr = json[fieldName]!.toString();
-        print('🔍[$questionId] 从字段 "$fieldName" 找到答案: $answerStr');
+        AppLog.d('🔍[$questionId] 从字段 "$fieldName" 找到答案: $answerStr');
         break;
       }
     }
@@ -2140,14 +2268,14 @@ class QuestionTrainController extends GetxController {
       if (correctAnswers.isNotEmpty) {
         answerStr =
             correctAnswers.map((i) => String.fromCharCode(65 + i)).join(',');
-        print('🔍[$questionId] 从选项中提取到答案: $answerStr');
+        AppLog.d('🔍[$questionId] 从选项中提取到答案: $answerStr');
       }
     }
 
     if (correctAnswers.isEmpty) {
-      print('⚠️[$questionId] 未找到任何答案数据！');
+      AppLog.d('⚠️[$questionId] 未找到任何答案数据！');
     } else {
-      print('✅[$questionId] 成功解析答案: $answerStr -> indices=$correctAnswers');
+      AppLog.d('✅[$questionId] 成功解析答案: $answerStr -> indices=$correctAnswers');
     }
 
     // 解析 question_status
@@ -2190,7 +2318,7 @@ class QuestionTrainController extends GetxController {
               .where((i) => i >= 0)
               .toList();
           if (parsedUserAnswer.isNotEmpty) {
-            print('🔍[$questionId] 从字段 "$fieldName" 找到用户答案: $parsedUserAnswer');
+            AppLog.d('🔍[$questionId] 从字段 "$fieldName" 找到用户答案: $parsedUserAnswer');
             break;
           }
         } else if (ua is String && ua.isNotEmpty) {
@@ -2213,7 +2341,7 @@ class QuestionTrainController extends GetxController {
           }
           if (indices.isNotEmpty) {
             parsedUserAnswer = indices;
-            print(
+            AppLog.d(
                 '🔍[$questionId] 从字段 "$fieldName" 找到用户答案(字符串): $parsedUserAnswer');
             break;
           }
@@ -2306,32 +2434,75 @@ class QuestionTrainController extends GetxController {
   void _startTimer() {
     // 确保先取消已有计时器
     _timer?.cancel();
+    _lastTickTime = DateTime.now();
+    // 承接已累计的正计时(防止多次启动时丢失)
+    _elapsedMs = elapsedSeconds.value * 1000;
 
-    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final now = DateTime.now();
+
       if (isCountdownMode) {
-        if (remainingSeconds.value > 0) {
-          remainingSeconds.value--;
-        } else {
-          timer.cancel();
+        // ★2026-08-14 修复:倒计时由墙钟绝对截止时刻重算(毫秒精度)。
+        // 原按 tick 次数累减,diff 的 inSeconds 截断 + 回调延迟排队会系统性丢余数,
+        // 主线程繁忙/模拟器上表现为"真实时间过了 2~3 秒倒计时才少 1 秒";
+        // 改为截止时刻后,无论 tick 是否延迟每次都按真实流逝重算,退后台回前台也一次补准
+        final end = _countdownEndTime;
+        if (end == null) return;
+        final remainMs = end.difference(now).inMilliseconds;
+        final remainSec = remainMs > 0 ? (remainMs / 1000).ceil() : 0;
+        if (remainingSeconds.value != remainSec) {
+          remainingSeconds.value = remainSec;
+        }
+        if (remainMs <= 0) {
+          _timer?.cancel();
+          _timer = null;
           submitExam(auto: true);
         }
       } else {
-        elapsedSeconds.value++;
+        // 正计时:毫秒精度累加,显示向下取整(不丢 tick 余数)
+        final diffMs = now.difference(_lastTickTime).inMilliseconds;
+        _lastTickTime = now;
+        if (diffMs > 0) {
+          _elapsedMs += diffMs;
+          final sec = _elapsedMs ~/ 1000;
+          if (elapsedSeconds.value != sec) {
+            elapsedSeconds.value = sec;
+          }
+        }
       }
     });
   }
 
+  /// 设置倒计时剩余秒数并重算墙钟截止时刻
+  /// (所有设置剩余时间的入口必须走这里,保证截止时刻与显示值一致)
+  void _setRemaining(int seconds) {
+    remainingSeconds.value = seconds;
+    _countdownEndTime = DateTime.now().add(Duration(seconds: seconds));
+  }
+
   // 交卷 - 调用后端 API
-  void submitExam({bool auto = false}) async {
+  Future<void> submitExam({bool auto = false}) async {
+    // ★2026-08-14 修复:已交卷后禁止再次提交
+    // (防止结果页返回答题页后重复点交卷,造成同一份答案重复提交)
+    if (_isExamSubmitted) return;
+
     if (auto) {
-      Get.back(); // 返回上一页面
-      SnackbarUtils.showInfo("时间已到，自动交卷");
+      // ★2026-08-14 修复:倒计时归零走完整提交流程(跳过确认弹窗),
+      // 不再直接退出丢答案;提交前先保存进度,失败时可恢复重试
+      _saveExamProgress();
+      SnackbarUtils.showInfo('时间已到，正在自动交卷...');
+      await _doSubmit();
       return;
     }
 
     final confirm = await showConfirmDialog();
     if (!confirm) return;
 
+    await _doSubmit();
+  }
+
+  // 构建提交数据并提交(手动/自动交卷共用)
+  Future<void> _doSubmit() async {
     // 构建提交数据 - 按照后端要求的格式：{0: {id: xxx, answer: "A", material_id: 0}, 1: {...}}
     // 提交所有题目（包括未作答的，answer 为空字符串）
     final questionsData = <String, Map<String, dynamic>>{};
@@ -2373,12 +2544,12 @@ class QuestionTrainController extends GetxController {
         : elapsedSeconds.value;
 
     // 调试：打印提交数据
-    print('📝 提交数据:');
-    print('  paper_id: $paperId (类型: ${paperId?.runtimeType})');
-    print('  questions: $questionsData');
-    print(
+    AppLog.d('📝 提交数据:');
+    AppLog.d('  paper_id: $paperId (类型: ${paperId?.runtimeType})');
+    AppLog.d('  questions: $questionsData');
+    AppLog.d(
         '  start_time: ${DateTime.now().millisecondsSinceEpoch ~/ 1000 - usedSeconds}');
-    print('  已答题目数 ${userAnswers.length}/${questions.length}');
+    AppLog.d('  已答题目数 ${userAnswers.length}/${questions.length}');
 
     // ====== 分支处理：有 paperId vs 无 paperId ======
     final int paperIdInt =
@@ -2427,6 +2598,17 @@ class QuestionTrainController extends GetxController {
       isLoading.value = false;
 
       if (response.statusCode == 200 && response.data['code'] == 1) {
+        // 提交成功:标记已交卷并清除本地考试进度(下次进入正常开始,不弹恢复弹窗)
+        _isExamSubmitted = true;
+        // ★2026-08-14 修复:交卷成功立即停止倒计时,防止结果页停留期间
+        // 计时器归零触发自动二次交卷/重复跳转结果页
+        _timer?.cancel();
+        _timer = null;
+        if (paperId != null) {
+          _box.remove('exam_progress_$paperId');
+        }
+        // ====== 批量提交答题日志(SUBMIT 交卷),失败静默不影响交卷主流程 ======
+        await _submitLogBatch(action: 'SUBMIT');
         _navigateToResultPage(response.data['data'], usedSeconds);
       } else {
         SnackbarUtils.showError(response.data['msg'] ?? '提交失败，请重试');
@@ -2460,25 +2642,6 @@ class QuestionTrainController extends GetxController {
           if (question.kind == 'SHORT') {
             // 简答题：直接标记为正确（需要人工评分）
             correctCount++;
-
-            // 记录每道已答题目的日志（如果之前没记录过的话）
-            if (!_loggedQuestionIndices.contains(i)) {
-              final cateId = int.tryParse(question.cateId) ?? 0;
-              final questionId = int.tryParse(question.id) ?? 0;
-              final shortAnswer = shortAnswers[i] ?? '';
-
-              await _addQuestionLog(
-                questionId: questionId,
-                cateId: cateId,
-                userAnswer: shortAnswer,
-                isCorrect: 1,
-                timeSpent: 0,
-                sourceType: 'TRAIN',
-                sourceId: 0,
-              );
-
-              _loggedQuestionIndices.add(i);
-            }
           } else {
             // 选择题/判断题
             final isCorrect = _listEquals(userAnswer, question.correctAnswers);
@@ -2488,69 +2651,106 @@ class QuestionTrainController extends GetxController {
             } else {
               wrongCount++;
             }
-
-            // 记录每道已答题目的日志（如果之前没记录过的话）
-            if (!_loggedQuestionIndices.contains(i)) {
-              final cateId = int.tryParse(question.cateId) ?? 0;
-              final questionId = int.tryParse(question.id) ?? 0;
-
-              String userAnswerStr = userAnswer.map((e) {
-                return String.fromCharCode('A'.codeUnitAt(0) + e);
-              }).join(',');
-
-              await _addQuestionLog(
-                questionId: questionId,
-                cateId: cateId,
-                userAnswer: userAnswerStr,
-                isCorrect: isCorrect ? 1 : 0,
-                timeSpent: 0,
-                sourceType: 'TRAIN',
-                sourceId: 0,
-              );
-
-              _loggedQuestionIndices.add(i);
-            }
           }
         }
       }
 
       isLoading.value = false;
 
-      print(
+      // ====== 批量提交答题日志(SUBMIT 交卷),成功优先用后端成绩跳结果页 ======
+      final batchData = await _submitLogBatch(action: 'SUBMIT');
+
+      // ★2026-08-14 修复:交卷成功停止计时并标记已交卷
+      // (此路径此前漏设 _isExamSubmitted,会导致 onClose 重复保存进度/可重复交卷)
+      _timer?.cancel();
+      _timer = null;
+      _isExamSubmitted = true;
+
+      AppLog.d(
           '✅ 章节练习交卷完成: 已答$answeredCount, 正确$correctCount, 错误$wrongCount, 总计${questions.length}');
 
       String nickname = '未设';
       try {
         nickname = AuthService.to.nickname ?? '未设';
       } catch (e) {
-        print('获取昵称失败: $e');
+        AppLog.d('获取昵称失败: $e');
       }
 
-      final double scorePercent = answeredCount > 0
-          ? (correctCount / answeredCount * 100).roundToDouble()
-          : 0.0;
-      final bool passed = scorePercent >= 60;
+      // 批量日志 SUBMIT 成功时优先用后端统计;失败回退本地统计(正确率制)
+      // ★replayed=true 表示后端返回的是历史缓存结果(重复交卷),不使用,回退本地统计
+      int finalScore;
+      int finalTotalScore = 100;
+      int finalPassScore = 60;
+      int finalAnsweredCount = answeredCount;
+      int finalCorrectCount = correctCount;
+      int finalWrongCount = wrongCount;
+      bool finalPassed;
+      int finalDuration = usedSeconds;
+
+      if (batchData != null &&
+          batchData['submitted'] == true &&
+          batchData['replayed'] != true) {
+        finalScore = int.tryParse(batchData['score']?.toString() ?? '') ?? 0;
+        finalTotalScore =
+            int.tryParse(batchData['full_score']?.toString() ?? '') ?? 0;
+        finalPassScore =
+            int.tryParse(batchData['pass_score']?.toString() ?? '') ?? 0;
+        finalAnsweredCount =
+            int.tryParse(batchData['answered_count']?.toString() ?? '') ??
+                answeredCount;
+        finalCorrectCount = int.tryParse(batchData['correct_count']?.toString() ?? '') ??
+            correctCount;
+        finalWrongCount = int.tryParse(batchData['wrong_count']?.toString() ?? '') ??
+            wrongCount;
+        finalDuration = int.tryParse(batchData['actual_time_sec']?.toString() ?? '') ??
+            usedSeconds;
+
+        // ★章节练习后端未快照满分(full_score=0),回退百分制展示(accuracy_percent),
+        // 与旧的"正确率>=60 通过"口径一致
+        if (finalTotalScore <= 0) {
+          finalScore = int.tryParse(
+                  batchData['accuracy_percent']?.toString() ?? '') ??
+              (answeredCount > 0
+                  ? (correctCount / answeredCount * 100).round()
+                  : 0);
+          finalTotalScore = 100;
+          finalPassScore = 60;
+        }
+
+        finalPassed = batchData['is_pass'] == true;
+        // ★is_pass 可能为 null(如 pass_score=0 的试卷后端不返回 bool),
+        // 回退按 score>=passScore 判定(pass_score<=0 视为恒通过,与 paper/submit 口径一致)
+        if (batchData['is_pass'] == null) {
+          finalPassed = finalPassScore <= 0 || finalScore >= finalPassScore;
+        }
+      } else {
+        final double scorePercent = answeredCount > 0
+            ? (correctCount / answeredCount * 100).roundToDouble()
+            : 0.0;
+        finalScore = scorePercent.toInt();
+        finalPassed = scorePercent >= 60;
+      }
 
       Get.toNamed(
         Routes.QUESTIONS_RESULT,
         arguments: {
           'title': subject.isNotEmpty ? subject : '章节练习',
           'nickname': nickname,
-          'durationSeconds': usedSeconds,
-          'totalScore': 100,
-          'passScore': 60,
+          'durationSeconds': finalDuration,
+          'totalScore': finalTotalScore,
+          'passScore': finalPassScore,
           'questionCount': questions.length,
-          'answeredCount': answeredCount,
-          'correctCount': correctCount,
-          'wrongCount': wrongCount,
-          'score': scorePercent.toInt(),
-          'passed': passed,
+          'answeredCount': finalAnsweredCount,
+          'correctCount': finalCorrectCount,
+          'wrongCount': finalWrongCount,
+          'score': finalScore,
+          'passed': finalPassed,
         },
       );
     } catch (e, stackTrace) {
       isLoading.value = false;
-      print('章节练习交卷出错: $e');
-      print('堆栈: $stackTrace');
+      AppLog.d('章节练习交卷出错: $e');
+      AppLog.d('堆栈: $stackTrace');
       SnackbarUtils.showError('交卷失败: $e');
     }
   }
@@ -2578,7 +2778,7 @@ class QuestionTrainController extends GetxController {
     try {
       nickname = AuthService.to.nickname ?? '未设';
     } catch (e) {
-      print('获取昵称失败: $e');
+      AppLog.d('获取昵称失败: $e');
     }
 
     Get.toNamed(
@@ -2602,17 +2802,17 @@ class QuestionTrainController extends GetxController {
 
   // 处理交卷错误（统一方法）
   void _handleSubmitError(dynamic e, StackTrace stackTrace) {
-    print('交卷出错: $e');
-    print('堆栈: $stackTrace');
+    AppLog.d('交卷出错: $e');
+    AppLog.d('堆栈: $stackTrace');
     if (e is dio.DioException) {
-      print('=== 完整错误响应 ===');
-      print('Status: ${e.response?.statusCode}');
+      AppLog.d('=== 完整错误响应 ===');
+      AppLog.d('Status: ${e.response?.statusCode}');
       final data = e.response?.data?.toString() ?? '';
       for (int i = 0; i < data.length; i += 1000) {
         final end = (i + 1000 < data.length) ? i + 1000 : data.length;
-        print(data.substring(i, end));
+        AppLog.d(data.substring(i, end));
       }
-      print('===================');
+      AppLog.d('===================');
     }
     SnackbarUtils.showError('提交失败: $e');
   }
@@ -2738,63 +2938,25 @@ class QuestionTrainController extends GetxController {
   }
 
   // 检查答题结果
-  // 记录答题时间
+  // 记录本题累计答题用时(批量提交日志时上报,不再逐题调 logAdd)
   void _checkAnswer(int index, List<int> userAnswer) {
     final question = questions[index];
     final isCorrect = _listEquals(userAnswer, question.correctAnswers);
     answerResults[index] = isCorrect;
 
-    // 检查是否已记录过这道题的日志，防止重复记录
-    if (_loggedQuestionIndices.contains(index)) {
-      print('📝 题目 $index 已记录过答题日志，跳过重复记录');
+    if (!_shouldTrackLog) {
       return;
     }
 
-    // 计算答题用时
+    // 计算本题累计作答用时(秒),并重置本题开始时间(再次修改答案时继续累计)
     int timeSpent = 0;
     if (_questionStartTime != null) {
       timeSpent = DateTime.now().difference(_questionStartTime!).inSeconds;
+      _questionStartTime = DateTime.now();
     }
+    _timeSpentByIndex[index] = (_timeSpentByIndex[index] ?? 0) + timeSpent;
 
-    // 获取用户答案，根据题目类型处理
-    dynamic userAnswerData;
-    if (question.kind == 'FILL' || question.kind == 'SHORT') {
-      // 填空或简答题
-      userAnswerData = userAnswer;
-    } else {
-      // 选择题，转换为字符串
-      userAnswerData = userAnswer.map((e) => e.toString()).join(',');
-    }
-
-    // 确定 source_type 和 source_id
-    String sourceType = 'TRAIN';
-    int sourceId = 0;
-    if (paperId != null) {
-      sourceType = 'PAPER';
-      sourceId =
-          paperId is int ? paperId! : int.tryParse(paperId.toString()) ?? 0;
-    }
-
-    // 获取 cate_id
-    final cateId = int.tryParse(question.cateId) ?? 0;
-
-    print(
-        '📝 准备记录答题日志: questionId=${question.id}, cateId=$cateId, isCorrect=$isCorrect, timeSpent=$timeSpent');
-
-    // 调用答题日志接口
-    _addQuestionLog(
-      questionId: int.tryParse(question.id) ?? 0,
-      cateId: cateId,
-      userAnswer: userAnswerData,
-      isCorrect: isCorrect ? 1 : 0,
-      timeSpent: timeSpent,
-      sourceType: sourceType,
-      sourceId: sourceId,
-    );
-
-    // 标记已记录
-    _loggedQuestionIndices.add(index);
-    print('📝 题目 $index 答题日志已记录');
+    AppLog.d('📝 题目 $index 累计作答用时: ${_timeSpentByIndex[index]} 秒');
   }
 
   bool _listEquals<T>(List<T>? a, List<T>? b) {
@@ -2835,7 +2997,7 @@ class QuestionTrainController extends GetxController {
   // 更新简答题答案
   void updateShortAnswer(int index, String answer) {
     shortAnswers[index] = answer;
-    print('📝 更新简答题答案: index=$index, answer=$answer');
+    AppLog.d('📝 更新简答题答案: index=$index, answer=$answer');
   }
 
   // 提交简答题答案
@@ -2846,32 +3008,15 @@ class QuestionTrainController extends GetxController {
       return;
     }
 
-    final question = questions[index];
-
     // 标记为已答（使用 [-1] 表示简答题已答）
     userAnswers[index] = [-1];
 
-    // 记录答题日志
-    if (!_loggedQuestionIndices.contains(index)) {
-      final cateId = int.tryParse(question.cateId) ?? 0;
-      final questionId = int.tryParse(question.id) ?? 0;
-
-      // 简答题暂时标记为正确（需要人工评分）
-      _addQuestionLog(
-        questionId: questionId,
-        cateId: cateId,
-        userAnswer: answer,
-        isCorrect: 1, // 简答题默认标记为正确，等待人工评分
-        timeSpent: 0,
-        sourceType: paperId != null ? 'PAPER' : 'TRAIN',
-        sourceId: paperId != null
-            ? (paperId is int
-                ? paperId!
-                : int.tryParse(paperId.toString()) ?? 0)
-            : 0,
-      );
-
-      _loggedQuestionIndices.add(index);
+    // 累计本题作答用时(批量提交日志时上报,不再逐题调 logAdd)
+    if (_shouldTrackLog && _questionStartTime != null) {
+      final timeSpent =
+          DateTime.now().difference(_questionStartTime!).inSeconds;
+      _questionStartTime = DateTime.now();
+      _timeSpentByIndex[index] = (_timeSpentByIndex[index] ?? 0) + timeSpent;
     }
 
     // 显示解析
@@ -2891,7 +3036,7 @@ class QuestionTrainController extends GetxController {
       });
     }
 
-    print('✅ 简答题答案已提交: index=$index, answer=$answer');
+    AppLog.d('✅ 简答题答案已提交: index=$index, answer=$answer');
   }
 
   // 下一题
@@ -2931,11 +3076,81 @@ class QuestionTrainController extends GetxController {
     if (pageMode.value == 'EXAM' && paperId != null) {
       final progressData = {
         'userAnswers': userAnswers,
+        'shortAnswers': shortAnswers,
         'remainingSeconds': remainingSeconds.value,
         'currentQuestionIndex': currentQuestionIndex.value,
         'timestamp': DateTime.now().toIso8601String(),
       };
       _box.write('exam_progress_$paperId', progressData);
+    }
+  }
+
+  // 检测并恢复上次未完成的考试进度(仅 EXAM 试卷模式)
+  Future<void> _maybeRestoreExamProgress(dynamic paperId) async {
+    if (paperId == null || questions.isEmpty) return;
+    final key = 'exam_progress_$paperId';
+    final saved = _box.read<Map<String, dynamic>>(key);
+    if (saved == null || saved.isEmpty) return;
+
+    // 剩余时间按保存时刻墙钟衰减(切后台/隔天进入不会"白赚"时间)
+    final savedRemaining =
+        (saved['remainingSeconds'] as num?)?.toInt() ?? 0;
+    final savedTs = DateTime.tryParse(saved['timestamp']?.toString() ?? '');
+    final elapsedSinceSaved =
+        savedTs == null ? 0 : DateTime.now().difference(savedTs).inSeconds;
+    final remaining = savedRemaining - elapsedSinceSaved;
+    if (remaining <= 0) {
+      // 上次考试已超时:删除进度,重新开始
+      _box.remove(key);
+      SnackbarUtils.showInfo('上次考试已超时，请重新开始');
+      return;
+    }
+
+    final mm = remaining ~/ 60;
+    final ss = (remaining % 60).toString().padLeft(2, '0');
+    final continueExam = await CommonDialog.show(
+      title: '继续考试',
+      content: '检测到未完成的考试，剩余时间 $mm:$ss，是否继续作答？',
+      confirmText: '继续',
+      cancelText: '放弃',
+    );
+
+    if (continueExam == true) {
+      // 恢复答案
+      final savedAnswers = saved['userAnswers'];
+      if (savedAnswers is Map) {
+        final restored = <int, List<int>>{};
+        savedAnswers.forEach((k, v) {
+          final idx = int.tryParse(k.toString());
+          if (idx != null && v is List) {
+            restored[idx] =
+                List<int>.from(v.whereType<num>().map((e) => e.toInt()));
+          }
+        });
+        if (restored.isNotEmpty) userAnswers.assignAll(restored);
+      }
+      final savedShorts = saved['shortAnswers'];
+      if (savedShorts is Map) {
+        final restored = <int, String>{};
+        savedShorts.forEach((k, v) {
+          final idx = int.tryParse(k.toString());
+          if (idx != null) restored[idx] = v?.toString() ?? '';
+        });
+        if (restored.isNotEmpty) shortAnswers.assignAll(restored);
+      }
+      // 恢复剩余时间与题目位置
+      _setRemaining(remaining);
+      final target = ((saved['currentQuestionIndex'] as num?)?.toInt() ?? 0)
+          .clamp(0, questions.length - 1);
+      currentQuestionIndex.value = target;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (pageController.hasClients) {
+          pageController.jumpToPage(target);
+        }
+      });
+    } else {
+      // 放弃:删除进度,重新开始
+      _box.remove(key);
     }
   }
 
@@ -2962,7 +3177,7 @@ class QuestionTrainController extends GetxController {
 
     // 记录新题目的开始时间
     _questionStartTime = DateTime.now();
-    print('⏱️ 题目 $index 开始时间已更新: $_questionStartTime');
+    AppLog.d('⏱️ 题目 $index 开始时间已更新: $_questionStartTime');
 
     if (pageMode.value == 'VIEW') {
       // 背题模式：切换题目时隐藏解析，等待用户点击选项后显示
@@ -2973,39 +3188,292 @@ class QuestionTrainController extends GetxController {
     }
   }
 
-  // 调用答题日志接口
-  Future<void> _addQuestionLog({
-    required int questionId,
-    required int cateId,
-    required dynamic userAnswer,
-    required int isCorrect,
-    required int timeSpent,
-    String sourceType = 'TRAIN',
-    int sourceId = 0,
-  }) async {
-    try {
-      print('🌐 正在调用答题日志接口...');
-      print(
-          '📡 请求参数: question_id=$questionId, cate_id=$cateId, user_answer=$userAnswer, is_correct=$isCorrect, time_spent=$timeSpent, source_type=$sourceType, source_id=$sourceId');
+  // 构建完整答题卡 answers(批量提交用)
+  // user_answer 格式:单选/判断="A" 字符串;多选/不定项=数组(★即使只选一个也["A"]);
+  // 填空=数组(★即使一个也["答案"]);简答=文本;未答=null
+  List<Map<String, dynamic>> _buildAnswers() {
+    final answers = <Map<String, dynamic>>[];
+    for (int i = 0; i < questions.length; i++) {
+      final question = questions[i];
+      final questionId =
+          int.tryParse(question.id.toString()) ?? 0;
 
-      final response = await _examRepository.addQuestionLog({
+      bool answered = false;
+      dynamic userAnswerValue;
+      if (question.kind == 'SHORT') {
+        // 简答题:文本
+        final shortText = shortAnswers[i];
+        if (shortText != null && shortText.isNotEmpty) {
+          answered = true;
+          userAnswerValue = shortText;
+        }
+      } else if (question.kind == 'FILL') {
+        // 填空题:★后端要求数组(单个答案也包成数组)
+        final shortText = shortAnswers[i];
+        if (shortText != null && shortText.isNotEmpty) {
+          answered = true;
+          userAnswerValue = [shortText];
+        }
+      } else {
+        final userAnswer = userAnswers[i];
+        if (userAnswer != null && userAnswer.isNotEmpty) {
+          answered = true;
+          final letterList = userAnswer
+              .map((e) => String.fromCharCode('A'.codeUnitAt(0) + e))
+              .toList();
+          final isMulti = question.kind == 'MULTI' || question.kind == 'X';
+          if (isMulti) {
+            // 多选/不定项:★后端要求恒为数组(即使只选一个)
+            userAnswerValue = letterList;
+          } else {
+            // 单选/判断:字符串
+            userAnswerValue = letterList.first;
+          }
+        }
+      }
+
+      answers.add({
         'question_id': questionId,
-        'cate_id': cateId,
-        'user_answer': userAnswer,
-        'is_correct': isCorrect,
-        'time_spent': timeSpent,
-        'source_type': sourceType,
-        'source_id': sourceId,
+        'answered': answered,
+        'user_answer': userAnswerValue,
+        'time_spent': _timeSpentByIndex[i] ?? 0,
+        'viewed_answer': false,
+        'is_marked': favoriteQuestions[i] ?? false,
+        'order_index': i,
+        'extra': null,
       });
+    }
+    return answers;
+  }
 
-      print('✅ 答题日志接口调用成功: $response');
-      print('✅ response.data: ${response.data}');
-      print('✅ response.code: ${response.code}');
-      print('✅ response.message: ${response.message}');
+  // 批量提交答题日志(action: SAVE=退出暂存, SUBMIT=交卷)
+  // 成功返回响应 data(SUBMIT 含成绩),失败返回 null(静默,不影响主流程)
+  Future<Map<String, dynamic>?> _submitLogBatch(
+      {required String action}) async {
+    if (!_shouldTrackLog) {
+      return null;
+    }
+    // 防并发重复提交(交卷与退出竞态)
+    if (_logBatchSubmitting) {
+      AppLog.d('🛡️ 批量日志提交进行中,跳过本次 $action');
+      return null;
+    }
+    _logBatchSubmitting = true;
+
+    try {
+      // 本场累计答题时长(秒)
+      final int usedSeconds = isCountdownMode
+          ? ((examInitialSeconds - remainingSeconds.value)
+                  .clamp(0, examInitialSeconds))
+              .toInt()
+          : elapsedSeconds.value;
+
+      final answers = _buildAnswers();
+      final questionIds = questions
+          .map((q) => int.tryParse(q.id.toString()) ?? 0)
+          .toList();
+
+      final params = <String, dynamic>{
+        'action': action,
+        'practice_id': practiceId,
+        'source_type': paperId != null ? 'PAPER' : 'TRAIN',
+        'source_id': sourceId,
+        'source_scope': sourceScope,
+        'answer_mode': 'PRACTICE', // 答题模式写死 PRACTICE
+        'question_type': _entryQuestionType,
+        // ★完整题序 SAVE/SUBMIT 都传:首次 SAVE 建记录时后端据此落 question_ids(NOT NULL),
+        // 否则续答时 practice/detail 返回的 question_ids 为空
+        'question_ids': jsonEncode(questionIds),
+        'elapsed_time_sec': usedSeconds,
+        'platform': 'app',
+        'answers': jsonEncode(answers),
+      };
+
+      if (action == 'SAVE') {
+        // 暂存:带当前轮次与断点下标,供下次续答恢复
+        params['attempt_no'] = attemptCount > 0 ? attemptCount : 1;
+        params['current_index'] = currentQuestionIndex.value;
+      } else {
+        // 交卷:交卷时间戳
+        params['submitted_at'] =
+            DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      }
+
+      // APP 系统标识(可选字段,尽量带上)
+      try {
+        params['app_platform'] = Platform.isAndroid ? 'android' : 'ios';
+      } catch (_) {}
+
+      AppLog.d('🌐 批量提交答题日志 logBatchAdd action=$action, practiceId=$practiceId');
+      AppLog.d('📡 answers 数量: ${answers.length}, questionIds 数量: ${questionIds.length}');
+
+      // 5 秒超时保护:日志记录不阻塞交卷/退出主流程
+      final response = await _examRepository
+          .addLogBatch(params)
+          .timeout(const Duration(seconds: 5));
+
+      if (response.isSuccess) {
+        final data = response.data;
+        if (data is Map && data['replayed'] == true) {
+          AppLog.d('⚠️ logBatchAdd 返回 replayed=true(后端判重复交卷,返回历史缓存结果): $data');
+        }
+        AppLog.d('✅ logBatchAdd 成功: $data');
+        // SAVE 时若后端返回新 practice_id,同步更新(交卷/后续使用)
+        if (action == 'SAVE' && data is Map) {
+          final newPracticeId =
+              int.tryParse(data['practice_id']?.toString() ?? '');
+          if (newPracticeId != null && newPracticeId > 0) {
+            practiceId = newPracticeId;
+            AppLog.d('🆕 SAVE 返回新 practice_id: $practiceId');
+          }
+        }
+        if (data is Map) {
+          return Map<String, dynamic>.from(data);
+        }
+        return null;
+      }
+      AppLog.d('❌ logBatchAdd 失败: code=${response.code}, msg=${response.message}');
+      return null;
     } catch (e, stackTrace) {
-      print('❌ 记录答题日志失败: $e');
-      print('📋 错误堆栈: $stackTrace');
-      // 不影响正常答题流程，只打印日志
+      AppLog.d('❌ 批量提交答题日志失败: $e');
+      AppLog.d('📋 错误堆栈: $stackTrace');
+      // 不影响正常答题/交卷/退出流程,只打印日志
+      return null;
+    } finally {
+      _logBatchSubmitting = false;
+    }
+  }
+
+  // practice_id>0 时拉取练习记录详情,回填上次作答并跳到断点续答
+  Future<void> _maybeRestorePractice() async {
+    if (practiceId <= 0) {
+      return;
+    }
+    if (!_shouldTrackLog) {
+      return;
+    }
+
+    try {
+      AppLog.d('🧾 practiceId=$practiceId >0,拉取练习记录详情回填');
+      final response = await _examRepository.getPracticeDetail(practiceId);
+
+      if (!response.isSuccess || response.data is! Map) {
+        AppLog.d('⚠️ practice/detail 失败: code=${response.code}, msg=${response.message}');
+        return;
+      }
+
+      final data = response.data as Map;
+
+      // 记录 attempt_count(退出 SAVE 时作为 attempt_no 上报)
+      final practiceRaw = data['practice'];
+      if (practiceRaw is Map) {
+        attemptCount =
+            int.tryParse(practiceRaw['attempt_count']?.toString() ?? '') ?? 0;
+        AppLog.d('🧾 attemptCount=$attemptCount');
+      }
+
+      // answers: question_id => 作答详情,按题号匹配回填
+      final answersRaw = data['answers'];
+      if (answersRaw is Map && answersRaw.isNotEmpty) {
+        AppLog.d('🧾 practice/detail answers 数量: ${answersRaw.length}, keys: ${answersRaw.keys.take(5).toList()}');
+        for (int i = 0; i < questions.length; i++) {
+          final question = questions[i];
+          final questionId = int.tryParse(question.id.toString()) ?? 0;
+          final answerDetail = answersRaw[questionId] ??
+              answersRaw[questionId.toString()];
+          if (answerDetail is! Map) {
+            continue;
+          }
+
+          final userAnswerRaw = answerDetail['user_answer'];
+          // ★detail 接口 answers 条目不含 answered 字段(实际字段: user_answer/is_correct/
+          // viewed_answer/is_marked/score/time_spent),按 user_answer 是否为空兜底判断已答
+          final hasAnswer = userAnswerRaw != null &&
+              (userAnswerRaw is List
+                  ? userAnswerRaw.isNotEmpty
+                  : userAnswerRaw.toString().isNotEmpty);
+          final answered = answerDetail['answered'] == true || hasAnswer;
+          // is_marked 后端为 0/1 int(非 bool)
+          final isMarked = answerDetail['is_marked'] == true ||
+              answerDetail['is_marked'] == 1;
+          final isCorrectRaw = answerDetail['is_correct'];
+          final timeSpent =
+              int.tryParse(answerDetail['time_spent']?.toString() ?? '') ?? 0;
+
+          if (isMarked) {
+            favoriteQuestions[i] = true;
+          }
+          if (timeSpent > 0) {
+            _timeSpentByIndex[i] = timeSpent;
+          }
+
+          if (!answered || userAnswerRaw == null) {
+            continue;
+          }
+
+          // 回填答案:简答=文本;填空=数组(元素拼接);字符串="A"(单选/判断);数组=["A","C"](多选/不定项)
+          if (question.kind == 'SHORT') {
+            shortAnswers[i] = userAnswerRaw.toString();
+            userAnswers[i] = [-1];
+          } else if (question.kind == 'FILL') {
+            // 填空后端返回数组(单个答案也是数组),拼接后回填文本框
+            final fillText = userAnswerRaw is List
+                ? userAnswerRaw.map((e) => e.toString()).join(',')
+                : userAnswerRaw.toString();
+            shortAnswers[i] = fillText;
+            userAnswers[i] = [-1];
+          } else {
+            // 兼容后端存储格式:数组["A","C"] / 字符串 "A" / 逗号串 "A,B"
+            final rawList = userAnswerRaw is List
+                ? userAnswerRaw.map((e) => e.toString()).toList()
+                : userAnswerRaw.toString().split(',');
+            final indices = <int>[];
+            for (final letter in rawList) {
+              final upper = letter.trim().toUpperCase();
+              if (upper.isEmpty) continue;
+              final idx = upper.codeUnitAt(0) - 'A'.codeUnitAt(0);
+              if (idx >= 0 && idx < question.options.length) {
+                indices.add(idx);
+              }
+            }
+            if (indices.isNotEmpty) {
+              userAnswers[i] = indices;
+            }
+          }
+          // 对错优先用后端 is_correct(0/1),缺失时本地判定(供答题卡/解析显示)
+          if (isCorrectRaw == 1 || isCorrectRaw == true) {
+            answerResults[i] = true;
+          } else if (isCorrectRaw == 0 || isCorrectRaw == false) {
+            answerResults[i] = false;
+          } else if (question.kind != 'SHORT') {
+            answerResults[i] =
+                _listEquals(userAnswers[i], question.correctAnswers);
+          }
+          AppLog.d('🧾 回填题目 $i (id=$questionId) 作答: $userAnswerRaw');
+        }
+      } else {
+        AppLog.d(
+            '⚠️ practice/detail 未返回 answers(为空),跳过回填——续答时前序答案将缺失');
+      }
+
+      // 断点恢复:跳到上次作答的下标(列表 practice 的 current_index)
+      int resumeIndex = -1;
+      if (practiceRaw is Map) {
+        resumeIndex =
+            int.tryParse(practiceRaw['current_index']?.toString() ?? '') ?? -1;
+      }
+      if (resumeIndex >= 0 && resumeIndex < questions.length) {
+        AppLog.d('🧾 断点续答: 跳到第 $resumeIndex 题');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (pageController.hasClients) {
+            pageController.jumpToPage(resumeIndex);
+          }
+        });
+      }
+    } catch (e, stackTrace) {
+      AppLog.d('❌ 拉取练习记录详情失败: $e');
+      AppLog.d('📋 堆栈: $stackTrace');
+      // 回填失败不影响正常答题,静默
     }
   }
 
@@ -3299,7 +3767,7 @@ class QuestionTrainController extends GetxController {
     // 不再依赖 question.isCollected（因为收藏模式加载时硬编码为 true，不会随操作更新）
     final isCurrentlyFav = favoriteQuestions[currentIndex] ?? false;
 
-    print(
+    AppLog.d(
         '🔖 切换收藏: questionId=$questionId (${questionId.runtimeType}), 当前状态=$isCurrentlyFav -> ${!isCurrentlyFav}, pageType=$pageType');
 
     isCollecting.value = true; // 开始加载
@@ -3317,14 +3785,19 @@ class QuestionTrainController extends GetxController {
       // 如果 questionId 不是整数，转换为 0
       // 这里假设 API 接口需要整数参数
       final intQuestionId = int.tryParse(questionId.toString()) ?? 0;
-      print('🔖 调用API: $apiUrl, question_id=$intQuestionId');
+      AppLog.d(
+          '🔖 调用API: $apiUrl, question_id=$intQuestionId, type=$collectType');
 
       final response = await ApiClient.to.postExam(
         apiUrl,
-        data: {'question_id': intQuestionId},
+        data: {
+          'question_id': intQuestionId,
+          // 收藏来源类型:1=章节练习,2=历年真题,3=模拟考试(collectAdd/collectCancel 同传)
+          'type': collectType,
+        },
       );
 
-      print('🔖 收藏API响应 status=${response.statusCode}, data=${response.data}');
+      AppLog.d('🔖 收藏API响应 status=${response.statusCode}, data=${response.data}');
 
       if (response.statusCode == 200 && response.data is Map) {
         final code = response.data['code'];
@@ -3333,16 +3806,16 @@ class QuestionTrainController extends GetxController {
           final newFavState = !isCurrentlyFav;
           favoriteQuestions[currentIndex] = newFavState;
 
-          print('🔖 收藏操作成功: ${newFavState ? "已添加到收藏" : "已取消收藏"}');
+          AppLog.d('🔖 收藏操作成功: ${newFavState ? "已添加到收藏" : "已取消收藏"}');
         } else {
-          print('⚠️ 收藏API返回错误: code=$code, msg=${response.data['msg']}');
+          AppLog.d('⚠️ 收藏API返回错误: code=$code, msg=${response.data['msg']}');
         }
       } else {
-        print('⚠️ 收藏API请求失败: statusCode=${response.statusCode}');
+        AppLog.d('⚠️ 收藏API请求失败: statusCode=${response.statusCode}');
       }
     } catch (e, stackTrace) {
-      print('收藏操作出错: $e');
-      print('堆栈: $stackTrace');
+      AppLog.d('收藏操作出错: $e');
+      AppLog.d('堆栈: $stackTrace');
     } finally {
       isCollecting.value = false; // 结束加载
     }
@@ -3359,7 +3832,7 @@ class QuestionTrainController extends GetxController {
     }
 
     final collectedCount = favoriteQuestions.values.where((v) => v).length;
-    print('🔖 收藏状态初始化完成: ${questions.length} 题中 $collectedCount 题已收藏');
+    AppLog.d('🔖 收藏状态初始化完成: ${questions.length} 题中 $collectedCount 题已收藏');
 
     // 恢复用户之前的答题记录
     _restoreUserAnswers();
@@ -3367,7 +3840,7 @@ class QuestionTrainController extends GetxController {
     // 记录第一题的开始时间
     if (questions.isNotEmpty) {
       _questionStartTime = DateTime.now();
-      print('⏱️ 第一题开始时间已记录');
+      AppLog.d('⏱️ 第一题开始时间已记录');
     }
   }
 
@@ -3389,9 +3862,9 @@ class QuestionTrainController extends GetxController {
       }
     }
     if (restoredCount > 0) {
-      print('✅ 恢复用户答题记录: $restoredCount/${questions.length} 题已恢复答案');
+      AppLog.d('✅ 恢复用户答题记录: $restoredCount/${questions.length} 题已恢复答案');
     } else {
-      print('ℹ️ 无历史答题记录需要恢复');
+      AppLog.d('ℹ️ 无历史答题记录需要恢复');
     }
   }
 
@@ -3405,27 +3878,27 @@ class QuestionTrainController extends GetxController {
       // question_status == 1 表示未做，找到第一个这样的题目
       if (qs == 1) {
         targetIndex = i;
-        print('🎯 找到第一个未做题 索引=$i');
+        AppLog.d('🎯 找到第一个未做题 索引=$i');
         break;
       }
     }
 
     // 如果所有题都做过了 (没有找到 question_status == 1)，则留在第一题
     currentQuestionIndex.value = targetIndex;
-    print('🎯 设置初始题目索引: $targetIndex');
+    AppLog.d('🎯 设置初始题目索引: $targetIndex');
 
     // 使用 WidgetsBinding 确保在第一帧后跳转，更可靠
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (pageController.hasClients) {
         pageController.jumpToPage(targetIndex);
-        print('🎯 PageView 已跳转到索引: $targetIndex');
+        AppLog.d('🎯 PageView 已跳转到索引: $targetIndex');
       } else {
-        print('⚠️ pageController 还没有客户端，无法跳转');
+        AppLog.d('⚠️ pageController 还没有客户端，无法跳转');
         // 如果还没有客户端，再尝试一次
         Future.delayed(const Duration(milliseconds: 100), () {
           if (pageController.hasClients) {
             pageController.jumpToPage(targetIndex);
-            print('🎯 第二次尝试：PageView 已跳转到索引: $targetIndex');
+            AppLog.d('🎯 第二次尝试：PageView 已跳转到索引: $targetIndex');
           }
         });
       }
@@ -3435,7 +3908,16 @@ class QuestionTrainController extends GetxController {
   // 处理返回按钮退出逻辑
   Future<bool> onWillPop() async {
     // 防止屏幕边缘滑动导致的误触，统一提示
-    return await showExitDialog(message: '确定退出吗？');
+    final confirmed = await showExitDialog(message: '确定退出吗？');
+    if (!confirmed) {
+      return false;
+    }
+    // 确认退出:未交卷时批量暂存答题记录(SAVE),供下次进入续答;
+    // 失败静默不阻塞退出(logBatchAdd 内部已打印)
+    if (!_isExamSubmitted) {
+      await _submitLogBatch(action: 'SAVE');
+    }
+    return true;
   }
 
   // 显示退出确认对话框 (使用 Get.dialog 无动画)

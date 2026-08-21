@@ -1,4 +1,6 @@
+import 'package:dio/dio.dart' as dio;
 import 'package:get/get.dart';
+import '../models/address_model.dart';
 import '../models/api_response.dart';
 import '../models/global_project_model.dart';
 import '../models/home_model.dart';
@@ -336,18 +338,154 @@ class ExamRepository extends BaseRepository {
     }
   }
 
-  /// 添加答题日志
-  /// [data] 答题日志数据
-  Future<ApiResponse<dynamic>> addQuestionLog(Map<String, dynamic> data) async {
+  /// 批量提交完整答题卡（交卷 SUBMIT / 退出暂存 SAVE）
+  /// [data] 提交参数（answers/question_ids 为 JSON 字符串）
+  /// practice_id=0 首次提交，>0 续答提交
+  Future<ApiResponse<dynamic>> addLogBatch(Map<String, dynamic> data) async {
     try {
+      final formData = dio.FormData.fromMap(data);
       final response = await apiClient.exam(
-        'question/logAdd',
+        'question/logBatchAdd',
         method: 'POST',
-        data: data,
+        data: formData,
       );
       return handleResponse<dynamic>(response, (json) => json);
     } catch (e) {
       return handleError<dynamic>(e);
+    }
+  }
+
+  /// 获取练习记录详情（practice_id>0 时进入续答回填）
+  /// [practiceId] 练习会话ID
+  /// 返回: {practice, question_ids, order_snapshot, answers, logs}
+  /// ★后端参数键为 id(非 practice_id)
+  Future<ApiResponse<dynamic>> getPracticeDetail(int practiceId) async {
+    try {
+      final response = await apiClient.exam(
+        'practice/detail',
+        queryParameters: {'id': practiceId},
+      );
+      return handleResponse<dynamic>(response, (json) => json);
+    } catch (e) {
+      return handleError<dynamic>(e);
+    }
+  }
+
+  // ==================== 收货地址(api/address/*、api/area/* 顶级路径,不走 addons/exam 前缀) ====================
+
+  /// 获取收货地址列表(后端按 is_default 倒序、id 倒序,默认地址排最前)
+  Future<ApiResponse<List<AddressModel>>> getAddressList() async {
+    try {
+      final response = await apiClient.get('api/address/lists');
+      return handleResponse<List<AddressModel>>(
+        response,
+        (json) {
+          if (json['list'] is List) {
+            return (json['list'] as List)
+                .map((e) => AddressModel.fromJson(e))
+                .toList();
+          }
+          return [];
+        },
+      );
+    } catch (e) {
+      return handleError<List<AddressModel>>(e);
+    }
+  }
+
+  /// 新增收货地址
+  /// [data] consignee/phone/province/city/district/detail/is_default
+  /// ★FastAdmin 体系必须 form-urlencoded(项目默认 JSON 头,需 Options 覆盖)
+  Future<ApiResponse<bool>> addAddress(Map<String, dynamic> data) async {
+    try {
+      final response = await apiClient.post(
+        'api/address/add',
+        data: data,
+        options:
+            dio.Options(contentType: dio.Headers.formUrlEncodedContentType),
+      );
+      return handleResponse<bool>(response, (json) => true);
+    } catch (e) {
+      return handleError<bool>(e);
+    }
+  }
+
+  /// 编辑收货地址
+  /// [data] id + consignee/phone/province/city/district/detail/is_default
+  /// ★必须完整传其余字段(含 is_default,否则保持原值)
+  Future<ApiResponse<bool>> editAddress(Map<String, dynamic> data) async {
+    try {
+      final response = await apiClient.post(
+        'api/address/edit',
+        data: data,
+        options:
+            dio.Options(contentType: dio.Headers.formUrlEncodedContentType),
+      );
+      return handleResponse<bool>(response, (json) => true);
+    } catch (e) {
+      return handleError<bool>(e);
+    }
+  }
+
+  /// 删除收货地址
+  Future<ApiResponse<bool>> deleteAddress(int id) async {
+    try {
+      final response = await apiClient.post(
+        'api/address/delete',
+        data: {'id': id},
+        options:
+            dio.Options(contentType: dio.Headers.formUrlEncodedContentType),
+      );
+      return handleResponse<bool>(response, (json) => true);
+    } catch (e) {
+      return handleError<bool>(e);
+    }
+  }
+
+  /// 省市区列表(三级联动)
+  /// 不传参数查省份;传 [province] 查该省城市;传 [city] 查该市区县
+  /// ★data 为裸数组 [{value,name}],不走 handleResponse 的 fromJson(Map) 路径,手动解析
+  Future<ApiResponse<List<AreaOption>>> getAreaList(
+      {int? province, int? city}) async {
+    try {
+      final String path;
+      final Map<String, dynamic>? params;
+      if (city != null) {
+        path = 'api/area/district';
+        params = {'city': city};
+      } else if (province != null) {
+        path = 'api/area/city';
+        params = {'province': province};
+      } else {
+        path = 'api/area/province';
+        params = null;
+      }
+      final response = await apiClient.get(path, queryParameters: params);
+      if (response.statusCode == 200 && response.data is Map<String, dynamic>) {
+        final raw = response.data as Map<String, dynamic>;
+        if (raw['data'] is List) {
+          final list = (raw['data'] as List)
+              .map((e) => AreaOption.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+          return ApiResponse(
+            code: raw['code'] is int ? raw['code'] : 0,
+            message: raw['msg']?.toString() ?? '',
+            data: list,
+          );
+        }
+        return ApiResponse(
+          code: -1,
+          message: raw['msg']?.toString() ?? '获取地区失败',
+          data: null,
+        );
+      }
+      return ApiResponse(
+        code: response.statusCode ?? -1,
+        message: '请求失败: ${response.statusMessage}',
+        data: null,
+      );
+    } catch (e) {
+      return handleError<List<AreaOption>>(e);
     }
   }
 }

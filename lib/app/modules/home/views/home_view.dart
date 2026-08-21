@@ -25,6 +25,9 @@ class _HomeViewState extends State<HomeView> {
   Worker? _updateWorker;
   int _bannerIndex = 0;
 
+  /// ★2026-08-14 优化:各 tab 列表滚动位置(懒加载改造后切 tab 需手动保存/恢复)
+  final Map<int, double> _tabOffsets = {};
+
   @override
   void initState() {
     super.initState();
@@ -326,72 +329,126 @@ class _HomeViewState extends State<HomeView> {
         backgroundColor: const Color(0xFFF8FAFF),
         body: SafeArea(
           bottom: false,
-          child: CustomScrollView(
-            controller: _scrollController,
-            slivers: [
-              // 顶部导航栏（吸顶）
-              SliverPersistentHeader(
-                pinned: true,
-                floating: false,
-                delegate: _TopBarHeaderDelegate(
-                  child: Container(
-                    color: const Color(0xFFF8FAFF),
-                    padding:
-                        EdgeInsets.only(left: 32.w, right: 32.w, top: 30.h),
-                    child: _buildTopBar(),
+          // ★2026-08-14 优化:懒加载改造。
+          // 原内容区是 SliverToBoxAdapter + IndexedStack 包 3 个 shrinkWrap GridView,
+          // 首帧一次性全量构建所有卡片、切 tab 三列表全重建;
+          // 现按当前 tab 条件展开 SliverGrid/SliverList,按视口懒构建,未显示 tab 不构建
+          child: Obx(() {
+            return CustomScrollView(
+              controller: _scrollController,
+              slivers: [
+                // 顶部导航栏（吸顶）
+                SliverPersistentHeader(
+                  pinned: true,
+                  floating: false,
+                  delegate: _TopBarHeaderDelegate(
+                    child: Container(
+                      color: const Color(0xFFF8FAFF),
+                      padding:
+                          EdgeInsets.only(left: 32.w, right: 32.w, top: 30.h),
+                      child: _buildTopBar(),
+                    ),
                   ),
                 ),
-              ),
-              // 顶部内容区域（可滚动）
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 32.w),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(height: 40.h),
-                      _buildSearchBar(),
-                      _buildBannerCarousel(),
-                      _buildNoticeBar(),
-                      SizedBox(height: 30.h),
-                      _buildTopFeatureCards(),
-                      SizedBox(height: 20.h),
-                    ],
-                  ),
-                ),
-              ),
-              // tabs导航（吸顶，在顶部导航栏下方）
-              SliverPersistentHeader(
-                pinned: true,
-                floating: false,
-                delegate: _TabsHeaderDelegate(
-                  child: Container(
-                    color: const Color(0xFFF8FAFF),
-                    child: _buildStickyTabsNavigation(),
-                  ),
-                ),
-              ),
-              // 内容区域
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 32.w),
-                  child: Obx(() {
-                    return IndexedStack(
-                      index: controller.currentTabIndex.value,
+                // 顶部内容区域（可滚动）
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 32.w),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildCoursesList(), // 精选推荐课程列表
-                        _buildPastExamsList(), // 历年真题
-                        _buildMockExamsList(), // 模拟考试
+                        SizedBox(height: 40.h),
+                        _buildSearchBar(),
+                        _buildBannerCarousel(),
+                        _buildNoticeBar(),
+                        SizedBox(height: 30.h),
+                        _buildTopFeatureCards(),
+                        SizedBox(height: 20.h),
                       ],
-                    );
-                  }),
+                    ),
+                  ),
                 ),
-              ),
-              SliverToBoxAdapter(
-                child: SizedBox(height: 120.h),
-              ),
-            ],
-          ),
+                // tabs导航（吸顶，在顶部导航栏下方）
+                SliverPersistentHeader(
+                  pinned: true,
+                  floating: false,
+                  delegate: _TabsHeaderDelegate(
+                    child: Container(
+                      color: const Color(0xFFF8FAFF),
+                      child: _buildStickyTabsNavigation(),
+                    ),
+                  ),
+                ),
+                // 内容区域（按当前 tab 条件展开,懒加载）
+                if (controller.currentTabIndex.value == 0)
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: 32.w),
+                    sliver: SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 16.w,
+                        mainAxisSpacing: 16.h,
+                        childAspectRatio: 0.8,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final courses =
+                              controller.homeApiResponse.value?.data?.courses ??
+                                  [];
+                          return _buildCoursesCard(courses[index]);
+                        },
+                        childCount: controller
+                                .homeApiResponse.value?.data?.courses.length ??
+                            0,
+                      ),
+                    ),
+                  ),
+                if (controller.currentTabIndex.value == 1)
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: 32.w),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final papers =
+                              controller.homeApiResponse.value?.data?.papers ??
+                                  [];
+                          return Padding(
+                            padding: EdgeInsets.only(bottom: 32.h),
+                            child: _buildPastExamsCard(papers[index]),
+                          );
+                        },
+                        childCount: controller
+                                .homeApiResponse.value?.data?.papers.length ??
+                            0,
+                      ),
+                    ),
+                  ),
+                if (controller.currentTabIndex.value == 2)
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: 32.w),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final rooms =
+                              controller.homeApiResponse.value?.data?.rooms ??
+                                  [];
+                          return Padding(
+                            padding: EdgeInsets.only(bottom: 32.h),
+                            child: _buildMockExamsCard(rooms[index]),
+                          );
+                        },
+                        childCount: controller
+                                .homeApiResponse.value?.data?.rooms.length ??
+                            0,
+                      ),
+                    ),
+                  ),
+                SliverToBoxAdapter(
+                  child: SizedBox(height: 120.h),
+                ),
+              ],
+            );
+          }),
         ),
       ),
     );
@@ -422,29 +479,29 @@ class _HomeViewState extends State<HomeView> {
             ],
           ),
         ),
-        // GestureDetector(
-        //   behavior: HitTestBehavior.opaque,
-        //   onTap: () => controller.fetchCompanyConfigAndOpenH5(),
-        //   child: Container(
-        //     padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 12.h),
-        //     decoration: BoxDecoration(
-        //       color: const Color(0xFFEAF1FF),
-        //       borderRadius: BorderRadius.circular(999.r),
-        //     ),
-        //     child: Row(
-        //       children: [
-        //         Text(
-        //           '企业合作',
-        //           style: TextStyle(
-        //             fontSize: 30.sp,
-        //             fontWeight: w500,
-        //             color: const Color(0xFF3D7CFF),
-        //           ),
-        //         ),
-        //       ],
-        //     ),
-        //   ),
-        // ),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => controller.fetchCompanyConfigAndOpenH5(),
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 18.w, vertical: 12.h),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF1FF),
+              borderRadius: BorderRadius.circular(999.r),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  '企业合作',
+                  style: TextStyle(
+                    fontSize: 30.sp,
+                    fontWeight: w500,
+                    color: const Color(0xFF3D7CFF),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -866,24 +923,6 @@ class _HomeViewState extends State<HomeView> {
     );
   }
 
-  Widget _buildCoursesList() {
-    final courses = controller.homeApiResponse.value?.data?.courses ?? [];
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 16.w,
-        mainAxisSpacing: 16.h,
-        childAspectRatio: 0.8,
-      ),
-      itemCount: courses.length,
-      itemBuilder: (context, index) {
-        return _buildCoursesCard(courses[index]);
-      },
-    );
-  }
-
   Widget _buildCoursesCard(dynamic course) {
     // 动态获取数据
     String title = '课程标题';
@@ -1009,42 +1048,6 @@ class _HomeViewState extends State<HomeView> {
     );
   }
 
-  Widget _buildPastExamsList() {
-    final papers = controller.homeApiResponse.value?.data?.papers ?? [];
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 1,
-        crossAxisSpacing: 32.w,
-        mainAxisSpacing: 32.h,
-        childAspectRatio: 3,
-      ),
-      itemCount: papers.length,
-      itemBuilder: (context, index) {
-        return _buildPastExamsCard(papers[index]);
-      },
-    );
-  }
-
-  Widget _buildMockExamsList() {
-    final rooms = controller.homeApiResponse.value?.data?.rooms ?? [];
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 1,
-        crossAxisSpacing: 32.w,
-        mainAxisSpacing: 32.h,
-        childAspectRatio: 3,
-      ),
-      itemCount: rooms.length,
-      itemBuilder: (context, index) {
-        return _buildMockExamsCard(rooms[index]);
-      },
-    );
-  }
-
   Widget _buildPastExamsCard(dynamic paper) {
     // 动态获取数据
     String title = '历年真题';
@@ -1065,8 +1068,10 @@ class _HomeViewState extends State<HomeView> {
       validity = paper['type_text'] ?? '点击开始做';
     }
 
+    // ★2026-08-14 修复:原固定 height:120.h 在 SliverList 下内容溢出
+    // (GridView 时代 childAspectRatio:3 强制拉高不溢出);改 Row 自适应高度,
+    // 文本 Expanded + 按钮固定右侧,无溢出无遮挡
     return Container(
-      height: 120.h,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(32.r),
@@ -1081,112 +1086,113 @@ class _HomeViewState extends State<HomeView> {
       ),
       child: Padding(
         padding: EdgeInsets.fromLTRB(32.w, 16.w, 16.w, 16.w),
-        child: Stack(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 分类标签
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAF1FF),
-                    borderRadius: BorderRadius.circular(4.r),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 分类标签
+                  Container(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF1FF),
+                      borderRadius: BorderRadius.circular(4.r),
+                    ),
+                    child: Text(
+                      '历年真题',
+                      style: TextStyle(
+                        fontSize: 24.sp,
+                        color: const Color(0xFF3D7CFF),
+                      ),
+                    ),
                   ),
-                  child: Text(
-                    '历年真题',
+                  SizedBox(height: 8.h),
+                  // 标题
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 40.sp,
+                      fontWeight: w500,
+                      color: const Color(0xFF333333),
+                    ),
+                  ),
+                  SizedBox(height: 8.h),
+                  // 描述文字
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 28.sp,
+                      color: const Color(0xFF999999),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 8.h),
+                  // 有效时间
+                  Text(
+                    validity,
                     style: TextStyle(
                       fontSize: 24.sp,
-                      color: const Color(0xFF3D7CFF),
+                      color: const Color(0xFF999999),
                     ),
                   ),
-                ),
-                SizedBox(height: 8.h),
-                // 标题
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 40.sp,
-                    fontWeight: w500,
-                    color: const Color(0xFF333333),
-                  ),
-                ),
-                SizedBox(height: 8.h),
-                // 描述文字
-                Text(
-                  description,
-                  style: TextStyle(
-                    fontSize: 28.sp,
-                    color: const Color(0xFF999999),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                SizedBox(height: 8.h),
-                // 有效时间
-                Text(
-                  validity,
-                  style: TextStyle(
-                    fontSize: 24.sp,
-                    color: const Color(0xFF999999),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
+            SizedBox(width: 16.w),
             // 立即参加按钮
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: GestureDetector(
-                onTap: () {
-                  int paperId = 0;
-                  String paperTitle = title;
-                  int paperTotalScore = 0;
-                  int paperPassScore = 0;
+            GestureDetector(
+              onTap: () {
+                int paperId = 0;
+                String paperTitle = title;
+                int paperTotalScore = 0;
+                int paperPassScore = 0;
 
-                  if (paper is HomePaper) {
-                    paperId = paper.id;
-                    paperTotalScore = paper.totalScore;
-                    paperPassScore = paper.passScore;
-                  } else if (paper is Map<String, dynamic>) {
-                    paperId = paper['id'] ?? 0;
-                    paperTotalScore = paper['total_score'] ?? 0;
-                    paperPassScore = paper['pass_score'] ?? 0;
-                  }
+                if (paper is HomePaper) {
+                  paperId = paper.id;
+                  paperTotalScore = paper.totalScore;
+                  paperPassScore = paper.passScore;
+                } else if (paper is Map<String, dynamic>) {
+                  paperId = paper['id'] ?? 0;
+                  paperTotalScore = paper['total_score'] ?? 0;
+                  paperPassScore = paper['pass_score'] ?? 0;
+                }
 
-                  Get.toNamed(
-                    '/question-train',
-                    arguments: {
-                      'paper_id': paperId,
-                      'title': paperTitle,
-                      'limit_time': 0,
-                      'total_score': paperTotalScore,
-                      'pass_score': paperPassScore,
-                      'join_count': 0,
-                      'mode': 'EXAM',
-                      'pageType': 'past',
-                    },
-                  );
-                },
-                child: Container(
-                  width: 240.w,
-                  height: 100.h,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(50.r),
-                    border: Border.all(
-                      color: const Color(0xFF3D7CFF),
-                      width: 2.w,
-                    ),
+                Get.toNamed(
+                  '/question-train',
+                  arguments: {
+                    'paper_id': paperId,
+                    'title': paperTitle,
+                    'limit_time': 0,
+                    'total_score': paperTotalScore,
+                    'pass_score': paperPassScore,
+                    'join_count': 0,
+                    'mode': 'EXAM',
+                    'pageType': 'past',
+                  },
+                );
+              },
+              child: Container(
+                width: 240.w,
+                height: 100.h,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(50.r),
+                  border: Border.all(
+                    color: const Color(0xFF3D7CFF),
+                    width: 2.w,
                   ),
-                  child: Center(
-                    child: Text(
-                      '立即参加',
-                      style: TextStyle(
-                        fontSize: 32.sp,
-                        color: const Color(0xFF3D7CFF),
-                        fontWeight: w500,
-                      ),
+                ),
+                child: Center(
+                  child: Text(
+                    '立即参加',
+                    style: TextStyle(
+                      fontSize: 32.sp,
+                      color: const Color(0xFF3D7CFF),
+                      fontWeight: w500,
                     ),
                   ),
                 ),
@@ -1199,8 +1205,8 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Widget _buildMockExamsCard(HomeRoom room) {
+    // ★2026-08-14 修复:同真题卡片,固定 height 改 Row 自适应,防 SliverList 下溢出
     return Container(
-      height: 120.h,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(32.r),
@@ -1215,97 +1221,98 @@ class _HomeViewState extends State<HomeView> {
       ),
       child: Padding(
         padding: EdgeInsets.fromLTRB(32.w, 16.w, 16.w, 16.w),
-        child: Stack(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 分类标签
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEAF1FF),
-                    borderRadius: BorderRadius.circular(4.r),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 分类标签
+                  Container(
+                    padding:
+                        EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF1FF),
+                      borderRadius: BorderRadius.circular(4.r),
+                    ),
+                    child: Text(
+                      '模拟考试',
+                      style: TextStyle(
+                        fontSize: 24.sp,
+                        color: const Color(0xFF3D7CFF),
+                      ),
+                    ),
                   ),
-                  child: Text(
-                    '模拟考试',
+                  SizedBox(height: 8.h),
+                  // 标题
+                  Text(
+                    room.title,
+                    style: TextStyle(
+                      fontSize: 40.sp,
+                      fontWeight: w500,
+                      color: const Color(0xFF333333),
+                    ),
+                  ),
+                  SizedBox(height: 8.h),
+                  // 描述文字
+                  Text(
+                    '总分: ${room.totalScore}, 及格分数: ${room.passScore}',
+                    style: TextStyle(
+                      fontSize: 28.sp,
+                      color: const Color(0xFF999999),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 8.h),
+                  // 描述
+                  Text(
+                    room.typeText.isNotEmpty ? room.typeText : '点击开始做',
                     style: TextStyle(
                       fontSize: 24.sp,
-                      color: const Color(0xFF3D7CFF),
+                      color: const Color(0xFF999999),
                     ),
                   ),
-                ),
-                SizedBox(height: 8.h),
-                // 标题
-                Text(
-                  room.title,
-                  style: TextStyle(
-                    fontSize: 40.sp,
-                    fontWeight: w500,
-                    color: const Color(0xFF333333),
-                  ),
-                ),
-                SizedBox(height: 8.h),
-                // 描述文字
-                Text(
-                  '总分: ${room.totalScore}, 及格分数: ${room.passScore}',
-                  style: TextStyle(
-                    fontSize: 28.sp,
-                    color: const Color(0xFF999999),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                SizedBox(height: 8.h),
-                // 描述
-                Text(
-                  room.typeText.isNotEmpty ? room.typeText : '点击开始做',
-                  style: TextStyle(
-                    fontSize: 24.sp,
-                    color: const Color(0xFF999999),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
+            SizedBox(width: 16.w),
             // 立即参加按钮
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: GestureDetector(
-                onTap: () {
-                  Get.toNamed(
-                    '/question-train',
-                    arguments: {
-                      'paper_id': room.id,
-                      'title': room.title,
-                      'limit_time': 0,
-                      'total_score': room.totalScore,
-                      'pass_score': room.passScore,
-                      'join_count': 0,
-                      'mode': 'EXAM',
-                      'pageType': 'mock',
-                    },
-                  );
-                },
-                child: Container(
-                  width: 240.w,
-                  height: 100.h,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(50.r),
-                    border: Border.all(
-                      color: const Color(0xFF3D7CFF),
-                      width: 2.w,
-                    ),
+            GestureDetector(
+              onTap: () {
+                Get.toNamed(
+                  '/question-train',
+                  arguments: {
+                    'paper_id': room.id,
+                    'title': room.title,
+                    'limit_time': 0,
+                    'total_score': room.totalScore,
+                    'pass_score': room.passScore,
+                    'join_count': 0,
+                    'mode': 'EXAM',
+                    'pageType': 'mock',
+                  },
+                );
+              },
+              child: Container(
+                width: 240.w,
+                height: 100.h,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(50.r),
+                  border: Border.all(
+                    color: const Color(0xFF3D7CFF),
+                    width: 2.w,
                   ),
-                  child: Center(
-                    child: Text(
-                      '立即参加',
-                      style: TextStyle(
-                        fontSize: 32.sp,
-                        color: const Color(0xFF3D7CFF),
-                        fontWeight: w500,
-                      ),
+                ),
+                child: Center(
+                  child: Text(
+                    '立即参加',
+                    style: TextStyle(
+                      fontSize: 32.sp,
+                      color: const Color(0xFF3D7CFF),
+                      fontWeight: w500,
                     ),
                   ),
                 ),
@@ -1346,6 +1353,25 @@ class _HomeViewState extends State<HomeView> {
   }
 
   // 吸顶tabs导航
+  /// ★2026-08-14 优化:切 tab 前保存当前列表滚动位置,切换后恢复
+  /// (懒加载改造后各 tab 是同一 CustomScrollView 的不同 sliver,需手动保持位置)
+  void _onTabTap(int index) {
+    final current = controller.currentTabIndex.value;
+    if (current == index) return;
+    if (_scrollController.hasClients) {
+      _tabOffsets[current] = _scrollController.offset;
+    }
+    controller.switchTab(index);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final saved = _tabOffsets[index] ?? 0.0;
+      // 新 tab 列表较短时 clamp 到最大可滚距离,安全
+      _scrollController.jumpTo(
+        saved.clamp(0.0, _scrollController.position.maxScrollExtent),
+      );
+    });
+  }
+
   Widget _buildStickyTabsNavigation() {
     final titles = ['精选推荐', '历年真题', '模拟考试'];
     return Container(
@@ -1361,7 +1387,7 @@ class _HomeViewState extends State<HomeView> {
             final isActive = index == currentTab;
             return GestureDetector(
               onTap: () {
-                controller.switchTab(index);
+                _onTabTap(index);
               },
               child: Container(
                 padding: EdgeInsets.symmetric(vertical: 20.h),

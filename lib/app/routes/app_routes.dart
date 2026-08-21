@@ -32,8 +32,12 @@ abstract class Routes {
   static const MODIFY_NICKNAME = _Paths.MODIFY_NICKNAME;
   static const DELETE_ACCOUNT = _Paths.DELETE_ACCOUNT;
   static const VIP_CENTER = _Paths.VIP_CENTER;
+  static const ADDRESS_LIST = _Paths.ADDRESS_LIST;
+  static const ADDRESS_EDIT = _Paths.ADDRESS_EDIT;
   static const VIDEO_PLAYER = _Paths.STUDY + '/video-player';
   static const ORDER_CONFIRM = _Paths.STUDY + '/order-confirm';
+  static const MY_COURSE_DETAIL = _Paths.STUDY + '/my-course-detail';
+  static const MEMBER_RIGHTS = _Paths.MEMBER_RIGHTS;
   static final LOGIN = _Paths.AUTH + _Paths.LOGIN;
   static final VERIFICATION = _Paths.AUTH + _Paths.LOGIN + _Paths.VERIFICATION;
 }
@@ -73,6 +77,9 @@ abstract class _Paths {
   static const MODIFY_NICKNAME = '/modify-nickname';
   static const DELETE_ACCOUNT = '/delete-account';
   static const VIP_CENTER = '/vip-center';
+  static const ADDRESS_LIST = '/address-list';
+  static const ADDRESS_EDIT = '/address-edit';
+  static const MEMBER_RIGHTS = '/member-rights';
 
   static const AUTH = '/auth';
 }

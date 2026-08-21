@@ -3,9 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import '../../../../data/services/auth_service.dart';
+import '../../../../data/services/subject_vip_service.dart';
 import '../../../../components/common_dialog.dart';
 import '../controllers/questions_home_controller.dart';
+import 'package:xmshop/app/utils/app_log.dart';
 
 class QuestionsHomeView extends GetView<QuestionsHomeController> {
   const QuestionsHomeView({Key? key}) : super(key: key);
@@ -68,10 +69,10 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
     }
 
     if (route == '/questions/favorite') {
-      final subject = controller.getCurrentSubject();
-      if (subject != null) {
-        args['subject_id'] = subject.id;
-      }
+      // ★收藏列表接口按二级科目 ID(全局当前项目)过滤,与用户中心「我的收藏」口径一致;
+      // 不传题库顶部三级科目 tab 的 ID(fetchSubjects 异步刷新窗口期会拿到旧科目)
+      args['subject_id'] =
+          controller.globalController.currentProject.value?.id;
     }
 
     if (route == '/questions/questions-exam') {
@@ -250,7 +251,7 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
         ),
         Obx(() {
           final days = controller.globalController.daysToExam.value;
-          print('距离考试天数: $days');
+          AppLog.d('距离考试天数: $days');
           return Row(
             children: [
               Text(
@@ -637,7 +638,7 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
         'icon': 'e662',
         'color': const Color(0xFF52C41A),
         'route': '/questions/questions-elist',
-        'arguments': {'type_id': 2},
+        'arguments': {'type_id': 2, 'subject_id': currentSubjectId},
       },
       // {
       //   'title': '我的笔记',
@@ -790,15 +791,23 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
 
     final bool isVipItem = title == '考前押题' || title == '核心母题';
 
-    void handleTap() {
+    void handleTap() async {
       if (title == '快问老师') {
         CommonDialog.show(
           title: '提示',
           content: '敬请期待',
           showCancelButton: false,
         );
-      } else if (isVipItem && !AuthService.to.isMember) {
-        _showVipDialog();
+      } else if (isVipItem) {
+        // 按顶部三级科目判断 VIP 是否开通(多 VIP 按科目,不再用全局会员态)
+        final subjectId = controller.getCurrentSubject()?.id.toString() ?? '';
+        final opened =
+            await SubjectVipService.to.ensureSubjectOpened(subjectId);
+        if (!opened) {
+          _showVipDialog();
+        } else {
+          _handleCardTap(item);
+        }
       } else {
         _handleCardTap(item);
       }

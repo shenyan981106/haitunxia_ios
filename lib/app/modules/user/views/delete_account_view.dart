@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:get/get.dart';
 import '../../../services/screenAdapter.dart';
+import '../../../components/common_app_bar.dart';
+import '../../../components/common_dialog.dart';
 import '../controllers/delete_account_controller.dart';
 
 class DeleteAccountView extends GetView<DeleteAccountController> {
@@ -12,28 +13,7 @@ class DeleteAccountView extends GetView<DeleteAccountController> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF333333),
-        centerTitle: true,
-        title: Text(
-          '注销账号',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(46),
-            fontWeight: FontWeight.w500,
-            color: const Color(0xFF333333),
-          ),
-        ),
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_ios,
-            size: ScreenAdapter.fontSize(46),
-            color: const Color(0xFF333333),
-          ),
-          onPressed: () => Get.back(),
-        ),
-      ),
+      appBar: const CommonAppBar(title: '注销账号'),
       body: SafeArea(
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: ScreenAdapter.width(50)),
@@ -175,91 +155,16 @@ class DeleteAccountView extends GetView<DeleteAccountController> {
     );
   }
 
-  void _showConfirmDialog() {
-    SmartDialog.show(
-      builder: (context) {
-        return Container(
-          width: ScreenAdapter.width(800),
-          padding: EdgeInsets.all(ScreenAdapter.width(40)),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(ScreenAdapter.width(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '确认注销',
-                style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(48),
-                  fontWeight: FontWeight.w500,
-                  color: const Color(0xFF333333),
-                ),
-              ),
-              SizedBox(height: ScreenAdapter.height(30)),
-              Text(
-                '注销后账号将无法恢复，是否确认注销？',
-                style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(36),
-                  color: const Color(0xFF666666),
-                ),
-              ),
-              SizedBox(height: ScreenAdapter.height(50)),
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => SmartDialog.dismiss(),
-                      child: Container(
-                        height: ScreenAdapter.height(100),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F5F5),
-                          borderRadius:
-                              BorderRadius.circular(ScreenAdapter.width(50)),
-                        ),
-                        child: Text(
-                          '取消',
-                          style: TextStyle(
-                            fontSize: ScreenAdapter.fontSize(40),
-                            color: const Color(0xFF999999),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: ScreenAdapter.width(30)),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () async {
-                        SmartDialog.dismiss();
-                        await controller.submitLogoutRequest();
-                      },
-                      child: Container(
-                        height: ScreenAdapter.height(100),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF6B6B),
-                          borderRadius:
-                              BorderRadius.circular(ScreenAdapter.width(50)),
-                        ),
-                        child: Text(
-                          '确认',
-                          style: TextStyle(
-                            fontSize: ScreenAdapter.fontSize(40),
-                            color: Colors.white,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
+  void _showConfirmDialog() async {
+    final confirmed = await CommonDialog.show(
+      title: '确认注销',
+      content: '注销后账号将无法恢复，是否确认注销？',
+      confirmText: '确认',
+      confirmColor: const Color(0xFFFF6B6B),
+      barrierDismissible: false,
     );
+    if (confirmed) {
+      await controller.submitLogoutRequest();
+    }
   }
 }

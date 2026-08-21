@@ -92,8 +92,8 @@ class VideoPlayerView extends GetView<StudyVideoPlayerController> {
                           color: Colors.black38,
                         ),
                         child: Icon(
-                          Icons.arrow_back_ios_new,
-                          size: ScreenAdapter.fontSize(36),
+                          Icons.arrow_back_ios,
+                          size: ScreenAdapter.fontSize(48),
                           color: Colors.white,
                         ),
                       ),

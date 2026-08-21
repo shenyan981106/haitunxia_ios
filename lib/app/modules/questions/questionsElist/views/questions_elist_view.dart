@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../../components/common_empty_state.dart';
+import '../../../../components/common_app_bar.dart';
 import '../controllers/questions_elist_controller.dart';
 
 class QuestionsElistView extends GetView<QuestionsElistController> {
@@ -16,73 +17,48 @@ class QuestionsElistView extends GetView<QuestionsElistController> {
       ),
       child: Scaffold(
         backgroundColor: Colors.white,
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            children: [
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 30.w),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(height: 50.h),
-                    _buildHeader(),
-                    SizedBox(height: 50.h),
-                    _buildTabs(),
-                  ],
+        appBar: CommonAppBar(
+          titleWidget: Obx(() => Text(
+                controller.pageTitle.value,
+                style: TextStyle(
+                  fontSize: 50.sp,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF333333),
                 ),
-              ),
-              Expanded(
-                child: Container(
-                  color: const Color(0xFFF3F4F9),
-                  child: Obx(() {
-                    final count = controller.tabTitles.length;
-                    if (count == 0) return const SizedBox.shrink();
-                    return PageView.builder(
-                      controller: controller.pageController,
-                      onPageChanged: controller.onPageChanged,
-                      itemCount: count,
-                      itemBuilder: (context, index) {
-                        return _buildContent();
-                      },
-                    );
-                  }),
-                ),
-              ),
-            ],
-          ),
+              )),
+          toolbarHeight: 110.h,
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return SizedBox(
-      height: 110.h,
-      child: Stack(
-        children: [
-          Center(
-            child: Obx(() => Text(
-                  controller.pageTitle.value,
-                  style: TextStyle(
-                    fontSize: 50.sp,
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xFF333333),
-                  ),
-                )),
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: GestureDetector(
-              onTap: () => Get.back(),
-              child: Icon(
-                Icons.arrow_back_ios,
-                size: 44.sp,
-                color: const Color(0xFF333333),
+        body: Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 30.w),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(height: 50.h),
+                  _buildTabs(),
+                ],
               ),
             ),
-          ),
-        ],
+            Expanded(
+              child: Container(
+                color: const Color(0xFFF3F4F9),
+                child: Obx(() {
+                  final count = controller.tabTitles.length;
+                  if (count == 0) return const SizedBox.shrink();
+                  return PageView.builder(
+                    controller: controller.pageController,
+                    onPageChanged: controller.onPageChanged,
+                    itemCount: count,
+                    itemBuilder: (context, index) {
+                      return _buildContent();
+                    },
+                  );
+                }),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

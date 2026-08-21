@@ -17,6 +17,9 @@ class StudyController extends GetxController {
   // 用于界面显示的响应式列表（根据筛选条件排序后的结果）
   final RxList<Map<String, dynamic>> courseList = <Map<String, dynamic>>[].obs;
 
+  // ★2026-08-14 修复:ever() Worker 需手动释放,否则挂载在全局 Rx 上累积僵尸监听
+  Worker? _projectWorker;
+
   final ScrollController scrollController = ScrollController();
 
   // 加载状态
@@ -34,7 +37,7 @@ class StudyController extends GetxController {
     super.onInit();
     scrollController.addListener(_onScroll);
     // 监听全局项目切换，项目改变时自动刷新课程列表
-    ever(GlobalProjectController.to.currentProject, (project) {
+    _projectWorker = ever(GlobalProjectController.to.currentProject, (project) {
       debugPrint(
           "🔔 检测到项目切换: ${project?.name} (ID: ${project?.id})，正在刷新课程列表...");
       getCourseList();
@@ -50,6 +53,7 @@ class StudyController extends GetxController {
 
   @override
   void onClose() {
+    _projectWorker?.dispose();
     scrollController.dispose();
     super.onClose();
   }

@@ -3,6 +3,8 @@ import 'package:get/get.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import '../data/providers/api_client.dart';
+import 'common_app_bar.dart';
+import 'common_error_state.dart';
 
 /// 通用 HTML 内容展示页
 ///
@@ -62,27 +64,11 @@ class HtmlContentView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF6F7F9),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF333333),
-        centerTitle: true,
-        title: Text(
-          title,
-          style: TextStyle(
-            fontSize: 48.sp,
-            color: const Color(0xFF333333),
-          ),
-        ),
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_ios,
-            size: 48.sp,
-            color: const Color(0xFF333333),
-          ),
-          onPressed: () {
-            Get.back();
-          },
+      appBar: CommonAppBar(
+        title: title,
+        titleStyle: TextStyle(
+          fontSize: 48.sp,
+          color: const Color(0xFF333333),
         ),
       ),
       body: _buildContent(),
@@ -100,25 +86,9 @@ class HtmlContentView extends StatelessWidget {
             ),
           );
         } else if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.error_outline,
-                  size: 120.sp,
-                  color: const Color(0xFF999999),
-                ),
-                SizedBox(height: 24.h),
-                Text(
-                  '加载失败',
-                  style: TextStyle(
-                    fontSize: 36.sp,
-                    color: const Color(0xFF999999),
-                  ),
-                ),
-              ],
-            ),
+          return const CommonErrorState(
+            message: '加载失败',
+            iconColor: Color(0xFF999999),
           );
         } else {
           final content = snapshot.data ?? '';

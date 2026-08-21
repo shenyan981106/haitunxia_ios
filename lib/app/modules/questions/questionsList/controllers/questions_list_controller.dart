@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import 'package:xmshop/app/data/providers/api_client.dart';
 import '../../questionsHome/controllers/questions_home_controller.dart';
+import 'package:xmshop/app/utils/app_log.dart';
 
 class QuestionsListController extends GetxController {
   // 当前页面类型：chapter, must_brush, past_exams, mock_exams
@@ -23,8 +24,15 @@ class QuestionsListController extends GetxController {
   int? _currentColumnId;
   int? passedCategoryId;
 
+  /// 当前列(顶部 tab)的三级科目 ID,供 VIP 按科目判断使用
+  int? get currentColumnId => _currentColumnId;
+
   // 章节展开状态管理
   final Map<String, bool> _chapterExpansionStates = {};
+
+  // ★2026-08-14 修复:ever() Worker 需手动释放,否则挂载在长生命周期 Rx 上累积僵尸监听
+  Worker? _homeSubjectsWorker;
+  Worker? _topNavWorker;
 
   @override
   void onInit() {
@@ -56,7 +64,7 @@ class QuestionsListController extends GetxController {
         if (Get.isRegistered<QuestionsHomeController>()) {
           final homeController = Get.find<QuestionsHomeController>();
           // 监听 subjects 变化
-          ever(homeController.subjects, (_) {
+          _homeSubjectsWorker = ever(homeController.subjects, (_) {
             // 如果当前没有章节数据，或者需要刷新
             // 注意：这里可能需要更精细的控制，避免重复加载
             // 但考虑到 chapters 为空时肯定是需要加载的
@@ -69,7 +77,7 @@ class QuestionsListController extends GetxController {
           });
 
           // 监听 Tab 切换
-          ever(currentTopNavIndex, (index) {
+          _topNavWorker = ever(currentTopNavIndex, (index) {
             final columnId = _getColumnId(index);
             if (columnId != null) {
               loadChapters(columnId);
@@ -87,9 +95,17 @@ class QuestionsListController extends GetxController {
           }
         }
       } catch (e) {
-        print('QuestionsListController onReady error: $e');
+        AppLog.d('QuestionsListController onReady error: $e');
       }
     }
+  }
+
+  @override
+  void onClose() {
+    // ★2026-08-14 修复:释放挂载在长生命周期 Rx 上的监听,防止僵尸 Worker 泄漏
+    _homeSubjectsWorker?.dispose();
+    _topNavWorker?.dispose();
+    super.onClose();
   }
 
   int? _getColumnId(int index) {
@@ -183,7 +199,7 @@ class QuestionsListController extends GetxController {
                       childMap['type_2_accuracy']?.toString() ?? '';
 
                   try {
-                    print(
+                    AppLog.d(
                         '构造子节: title=$sectionTitle, id=$sectionId, cate_id=${childMap['cate_id']}, subject_id=$columnId');
                   } catch (_) {}
                   return {
@@ -248,7 +264,7 @@ class QuestionsListController extends GetxController {
                 'id': chapterId,
               };
               try {
-                print('构造章节: title=$title, id=$chapterId, rawKeys=${map.keys}');
+                AppLog.d('构造章节: title=$title, id=$chapterId, rawKeys=${map.keys}');
               } catch (_) {}
               return result;
             }).toList();

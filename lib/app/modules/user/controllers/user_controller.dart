@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/subject_vip_service.dart';
 import '../../../data/models/user_model.dart';
 import '../../../routes/app_pages.dart';
 import '../../../services/snackbar_utils.dart';
@@ -66,9 +67,12 @@ class UserController extends GetxController {
             final currentUser = AuthService.to.user.value;
             if (currentUser != null) {
               AuthService.to.updateUser(currentUser.copyWith(info: newInfo));
-              AuthService.to.updateMemberStatus(newInfo.status ?? 0);
             }
           }
+          // 回源用户详情 + 刷新按科目 VIP 状态(与 vip_center 支付成功刷新链一致;
+          // 接口 info 缺失时也能兜底拿到权威会员状态)
+          await AuthService.to.fetchUserInfo();
+          await SubjectVipService.to.refreshCurrentProject();
           SnackbarUtils.showSuccess('兑换成功');
           return true;
         } else {

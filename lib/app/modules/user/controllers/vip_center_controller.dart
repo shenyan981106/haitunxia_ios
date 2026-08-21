@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
@@ -5,18 +7,32 @@ import 'package:get/get.dart';
 import 'package:tobias/tobias.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fluwx/fluwx.dart';
+
+import '../../../data/models/member_package_model.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/iap_service.dart';
+import '../../../data/services/subject_vip_service.dart';
+import '../../../services/global_project_controller.dart';
 import '../../../services/snackbar_utils.dart';
 import '../../../utils/api_error_handler.dart';
 
+/// 会员中心控制器
+///
+/// 数据源:`addons/exam/user/memberPackages`(GET,传参 subject_id=全局当前项目 ID,
+/// 与首页精选推荐/历年真题同源)。返回单条会员配置(不区分年/季/月卡),
+/// 下挂 specs 单科规格列表(spec_type=1),科目多选。
+/// 支付:先 `pay/createMemberOrder` 下单(spec_ids 传所选规格多个),
+/// 再 `pay/memberPay` 发起支付。两个接口均为 form-urlencoded 提交。
+/// 订单金额完全由所选规格 price 决定,时长取套餐 days。
 class VipCenterController extends GetxController with WidgetsBindingObserver {
-  final RxInt selectedIndex = 0.obs;
+  /// 选中的单科规格名集合(多选)
+  final RxSet<String> selectedSingleSpecNames = <String>{}.obs;
+
   final RxnString selectedPayCode = RxnString();
   final RxList<Map<String, dynamic>> payMethods = <Map<String, dynamic>>[].obs;
-  final RxList<Map<String, dynamic>> memberConfigs =
-      <Map<String, dynamic>>[].obs;
-  final RxBool isLoadingConfigs = true.obs;
+  final RxList<MemberPackage> packages = <MemberPackage>[].obs;
+  final RxBool isLoadingPackages = true.obs;
 
   final bool enablePayment = true; //屏蔽支付
   bool _isPaying = false;
@@ -24,11 +40,73 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
   final Fluwx _fluwx = Fluwx();
   FluwxCancelable? _wechatPaySubscription;
 
+  // ==================== 派生状态 ====================
+
+  /// 当前会员配置(接口返回单条,不区分年/季/月卡)
+  MemberPackage? get package =>
+      packages.isEmpty ? null : packages.first;
+
+  /// 可选科目(合并各配置的 specs,以 name 去重)
+  List<MemberSpec> get currentTabSpecs {
+    final seen = <String>{};
+    final result = <MemberSpec>[];
+    for (final p in packages) {
+      for (final s in p.specs) {
+        if (seen.add(s.name)) {
+          result.add(s);
+        }
+      }
+    }
+    return result;
+  }
+
+  /// 指定科目名是否选中
+  bool isSpecSelected(String name) => selectedSingleSpecNames.contains(name);
+
+  /// 是否还有可购买的科目(加载中/无数据时视为有,避免支付栏闪烁;全部已开通则无)
+  bool get hasSelectableSpec {
+    final specs = currentTabSpecs;
+    return specs.isEmpty || specs.any((s) => !s.opened);
+  }
+
+  /// 指定套餐中已选中的规格对象
+  List<MemberSpec> selectedSpecsInPackage(MemberPackage pkg) {
+    return pkg.specs.where((s) => isSpecSelected(s.name)).toList();
+  }
+
+  /// 套餐合计价格信息(售价/原价/立省),由选中规格 price 汇总
+  PackagePriceInfo packagePriceInfo(MemberPackage pkg) {
+    final list = selectedSpecsInPackage(pkg);
+    if (list.isEmpty) {
+      return PackagePriceInfo(price: _toDouble(pkg.price), original: 0, save: 0);
+    }
+    var price = 0.0;
+    var original = 0.0;
+    var save = 0.0;
+    for (final s in list) {
+      price += _toDouble(s.price);
+      original += _toDouble(s.originalPrice);
+      save += _toDouble(s.saveAmount);
+    }
+    if (save <= 0) {
+      save = original - price;
+    }
+    if (save < 0) {
+      save = 0;
+    }
+    return PackagePriceInfo(price: price, original: original, save: save);
+  }
+
+  double _toDouble(dynamic value) =>
+      double.tryParse(value?.toString() ?? '') ?? 0;
+
+  // ==================== 生命周期 ====================
+
   @override
   void onInit() {
     super.onInit();
     WidgetsBinding.instance.addObserver(this);
-    _fetchMemberConfigs();
+    _fetchMemberPackages();
     _fetchPayMethods();
   }
 
@@ -42,10 +120,12 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 支付结果确认兜底:微信回调丢失或 H5 支付时,返回 App 后静默走完整刷新链
+    // (重拉套餐=服务端权威状态,已开通则会员/题库判断自动更新)
     if (state == AppLifecycleState.resumed && _isPaying) {
       _isPaying = false;
       Future.delayed(const Duration(seconds: 2), () {
-        _refreshUserInfo();
+        _onPaySuccess();
       });
     }
   }
@@ -55,41 +135,76 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     await AuthService.to.fetchUserInfo();
   }
 
-  /// 获取会员配置列表
-  Future<void> _fetchMemberConfigs() async {
+  /// 科目 ID:与首页精选推荐/历年真题同源,取全局当前项目 ID(首页左上角选择科目),兜底 '5'
+  String _resolveSubjectId() {
+    return GlobalProjectController.to.currentProject.value?.id ?? '5';
+  }
+
+  /// 获取会员套餐列表(含全科/单科规格)
+  Future<void> _fetchMemberPackages() async {
     try {
-      final response =
-          await ApiClient.to.get('addons/exam/user/memberOpenConfig');
+      final response = await ApiClient.to.exam(
+        'user/memberPackages',
+        queryParameters: {'subject_id': _resolveSubjectId()},
+      );
       final body = response.data;
       dynamic rawList;
 
-      if (body is Map && body['data'] is List) {
+      if (body is Map && body['data'] is Map) {
+        // 新结构:data 为单条会员配置对象
+        if (body['data']['list'] is List) {
+          rawList = body['data']['list'];
+        } else {
+          rawList = [body['data']];
+        }
+      } else if (body is Map && body['data'] is List) {
         rawList = body['data'];
-      } else if (body is Map &&
-          body['data'] is Map &&
-          (body['data']['list'] is List)) {
-        rawList = body['data']['list'];
       } else if (body is List) {
         rawList = body;
       }
 
       if (rawList is List) {
-        memberConfigs.value = rawList
+        packages.value = rawList
             .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
+            .map((e) => MemberPackage.fromJson(Map<String, dynamic>.from(e)))
             .toList();
+      } else {
+        packages.clear();
       }
     } on DioException catch (e) {
-      ApiErrorHandler.handleDioError(e, fallbackMessage: '获取VIP配置失败');
+      ApiErrorHandler.handleDioError(e, fallbackMessage: '获取会员套餐失败');
     } catch (e) {
-      ApiErrorHandler.handleError(e, fallbackMessage: '获取VIP配置失败');
+      ApiErrorHandler.handleError(e, fallbackMessage: '获取会员套餐失败');
     } finally {
-      isLoadingConfigs.value = false;
+      isLoadingPackages.value = false;
+      _resetSelections();
+    }
+  }
+
+  /// 重置默认选中:默认勾选第一个未开通的规格(已开通的科目不可再选)
+  void _resetSelections() {
+    final specs = currentTabSpecs;
+    selectedSingleSpecNames.clear();
+    for (final spec in specs) {
+      if (!spec.opened) {
+        selectedSingleSpecNames.add(spec.name);
+        return;
+      }
     }
   }
 
   /// 获取支付方式列表
   Future<void> _fetchPayMethods() async {
+    if (Platform.isIOS) {
+      // iOS 会员开通走苹果 IAP(独立下单/凭证校验接口),不请求后端支付方式;
+      // 注入本地虚拟方式仅用于支付栏展示,支付分支按平台判断(见 doPay)
+      payMethods.value = [
+        {'code': 'apple', 'name': 'Apple Pay', 'status': 1},
+      ];
+      selectPayMethod('apple');
+      return;
+    }
+
     try {
       final response = await ApiClient.to.get('addons/exam/pay/payMethod');
       final body = response.data;
@@ -124,14 +239,48 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     }
   }
 
-  /// 选择套餐
-  void selectPlan(int index) {
-    selectedIndex.value = index;
+  // ==================== 选择动作 ====================
+
+  /// 科目勾选切换(多选);已开通的科目不可再选
+  void toggleSingleSpec(String name) {
+    MemberSpec? spec;
+    for (final s in currentTabSpecs) {
+      if (s.name == name) {
+        spec = s;
+        break;
+      }
+    }
+    if (spec == null || spec.opened) return;
+    if (selectedSingleSpecNames.contains(name)) {
+      selectedSingleSpecNames.remove(name);
+    } else {
+      selectedSingleSpecNames.add(name);
+    }
   }
 
   /// 选择支付方式
   void selectPayMethod(String code) {
     selectedPayCode.value = code;
+  }
+
+  // ==================== 支付 ====================
+
+  /// 从下单接口返回中提取订单号 order_sn
+  String? _extractOrderSn(dynamic body) {
+    if (body is Map) {
+      final data = body['data'];
+      if (data is Map) {
+        return data['order_sn']?.toString() ?? data['orderSn']?.toString();
+      }
+      if (data is String && data.isNotEmpty) {
+        return data;
+      }
+      return body['order_sn']?.toString() ?? body['orderSn']?.toString();
+    }
+    if (body is String && body.isNotEmpty) {
+      return body;
+    }
+    return null;
   }
 
   /// partner="xxx"&seller_id="xxx"&out_trade_no="xxx"&subject="xxx"...
@@ -171,7 +320,7 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     return null;
   }
 
-  /// 提取微信App支付参数
+  /// 提取微信App支付参数(兼容大小写键名)
   Map<String, dynamic>? _extractWechatPayParams(dynamic body) {
     Map<String, dynamic>? params;
 
@@ -234,8 +383,7 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
 
         if (response.isSuccessful) {
           SnackbarUtils.showSuccess('支付成功');
-          _fetchMemberConfigs();
-          _refreshUserInfo();
+          _onPaySuccess();
         } else if (response.errCode == -2) {
           SnackbarUtils.showInfo('支付已取消');
         } else {
@@ -272,21 +420,46 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     }
   }
 
-  /// 发起支付（支付宝使用App支付，微信使用App支付）
+  /// 支付成功后的公共处理
+  void _onPaySuccess() {
+    _fetchMemberPackages();
+    _refreshUserInfo();
+    // 刷新按科目 VIP 状态(题库等模块的按科目判断立即生效)
+    SubjectVipService.to.refreshCurrentProject();
+  }
+
+  /// 发起支付(安卓/鸿蒙:支付宝/微信 App 支付;iOS:苹果 IAP 内购)
+  ///
+  /// 流程:createMemberOrder 下单(取 order_sn)→ memberPay 发起支付(取网关参数)。
+  /// iOS 走独立链路:createIosMemberOrder → StoreKit 购买 → iosVerifyReceipt(见 _doIosIapPay)。
   Future<void> doPay() async {
     if (!enablePayment) {
       SnackbarUtils.showInfo('请联系客服');
       return;
     }
-    final type = selectedPayCode.value ?? 'wechat';
 
-    if (memberConfigs.isEmpty || selectedIndex.value >= memberConfigs.length) {
-      SnackbarUtils.showError('请选择会员类型');
+    // ★iOS 会员开通走苹果 IAP(独立下单/凭证校验接口),安卓/鸿蒙维持原微信/支付宝链路
+    if (Platform.isIOS) {
+      await _doIosIapPay();
       return;
     }
-    final memberConfigId = memberConfigs[selectedIndex.value]['id']?.toString();
-    if (memberConfigId == null || memberConfigId.isEmpty) {
-      SnackbarUtils.showError('会员配置信息异常');
+
+    final type = selectedPayCode.value ?? 'wechat';
+
+    final pkg = package;
+    if (pkg == null || pkg.specs.isEmpty) {
+      SnackbarUtils.showError('暂无会员套餐');
+      return;
+    }
+    final specs = selectedSpecsInPackage(pkg);
+    if (specs.isEmpty) {
+      SnackbarUtils.showError('请选择科目');
+      return;
+    }
+    // 所选科目必须全部在该套餐下有对应规格,否则下单金额与展示不一致
+    final expectedCount = selectedSingleSpecNames.length;
+    if (specs.length != expectedCount) {
+      SnackbarUtils.showError('所选科目暂不支持该套餐');
       return;
     }
 
@@ -295,14 +468,37 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     try {
       SnackbarUtils.showInfo('正在发起支付...');
 
-      var response = await ApiClient.to.post(
-        'addons/exam/pay/pay',
+      // 1. 下单:spec_ids 传所选单科规格 id 列表(多选传多个,form-urlencoded)
+      // ★必须用 ListFormat.multiCompatible 编码为 spec_ids[]=156&spec_ids[]=157,
+      // 否则默认 multi 编码(PHP 只取最后一个值)会导致价格不叠加、只存一个规格
+      final orderResponse = await ApiClient.to.post(
+        'addons/exam/pay/createMemberOrder',
         data: {
-          'order_type': 'member',
-          'order_id': memberConfigId,
+          'member_config_id': pkg.id,
+          'spec_ids': specs.map((s) => s.id).toList(),
+        },
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          listFormat: ListFormat.multiCompatible,
+        ),
+      );
+
+      final orderSn = _extractOrderSn(orderResponse.data);
+      if (orderSn == null || orderSn.isEmpty) {
+        _isPaying = false;
+        SnackbarUtils.showError('创建订单失败');
+        return;
+      }
+
+      // 2. 支付
+      final response = await ApiClient.to.post(
+        'addons/exam/pay/memberPay',
+        data: {
+          'order_sn': orderSn,
           'pay_type': type,
           'method': 'app',
         },
+        options: Options(contentType: Headers.formUrlEncodedContentType),
       );
 
       if (response.data != null) {
@@ -326,8 +522,7 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
               final resultStatus = payResult['resultStatus']?.toString();
               if (resultStatus == '9000') {
                 SnackbarUtils.showSuccess('支付成功');
-                _fetchMemberConfigs();
-                _refreshUserInfo();
+                _onPaySuccess();
               } else if (resultStatus == '6001') {
                 SnackbarUtils.showInfo('支付已取消');
               } else if (resultStatus == '4000') {
@@ -343,7 +538,7 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
               SnackbarUtils.showError('调起支付宝失败：${e.toString()}');
             }
           } else {
-            _isPaying = false;
+            // H5 支付:保持 _isPaying=true,返回 App 时由 didChangeAppLifecycleState 兜底刷新
             final payUrl = body is Map
                 ? body['payUrl']?.toString() ?? body['url']?.toString()
                 : null;
@@ -355,9 +550,11 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
                   mode: LaunchMode.externalApplication,
                 );
               } else {
+                _isPaying = false;
                 SnackbarUtils.showError('无法打开支付页面');
               }
             } else {
+              _isPaying = false;
               SnackbarUtils.showError('获取支付参数失败');
             }
           }
@@ -374,8 +571,7 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
           if (wechatParams != null) {
             await _doWechatAppPay(wechatParams);
           } else {
-            _isPaying = false;
-
+            // H5 支付:保持 _isPaying=true,返回 App 时由 didChangeAppLifecycleState 兜底刷新
             final payUrl = body is String
                 ? body
                 : (body is Map
@@ -390,13 +586,127 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
                   mode: LaunchMode.externalApplication,
                 );
               } else {
+                _isPaying = false;
                 SnackbarUtils.showError('无法打开支付页面');
               }
             } else {
+              _isPaying = false;
               SnackbarUtils.showError('获取微信支付参数失败');
             }
           }
         }
+      } else {
+        _isPaying = false;
+        SnackbarUtils.showError('获取支付参数失败');
+      }
+    } on DioException catch (e) {
+      _isPaying = false;
+      ApiErrorHandler.handleDioError(e, fallbackMessage: '支付请求失败');
+    } catch (e) {
+      _isPaying = false;
+      ApiErrorHandler.handleError(e, fallbackMessage: '支付失败');
+    }
+  }
+
+  // ==================== iOS 苹果 IAP 内购 ====================
+
+  /// 汇总所选规格覆盖的三级科目 ID(subject_ids 逗号串,去重拼接)
+  String _collectSubjectIds(List<MemberSpec> specs) {
+    final ids = <String>[];
+    final seen = <String>{};
+    for (final s in specs) {
+      for (final id in s.subjectIds.split(',')) {
+        final trimmed = id.trim();
+        if (trimmed.isNotEmpty && seen.add(trimmed)) {
+          ids.add(trimmed);
+        }
+      }
+    }
+    return ids.join(',');
+  }
+
+  /// iOS 会员开通:苹果 IAP 内购链路(仅 iOS,doPay 平台分支调用)
+  ///
+  /// 流程:createIosMemberOrder 下单(member_config_id + subject_ids,取
+  /// order_sn/product_id)→ 落盘待校验订单 → StoreKit 购买 → 读凭证 →
+  /// iosVerifyReceipt 服务端校验 → 成功走 _onPaySuccess 刷新链。
+  /// 购买中断/校验失败由 IapService 启动补单兜底。
+  Future<void> _doIosIapPay() async {
+    final pkg = package;
+    if (pkg == null || pkg.specs.isEmpty) {
+      SnackbarUtils.showError('暂无会员套餐');
+      return;
+    }
+    final specs = selectedSpecsInPackage(pkg);
+    if (specs.isEmpty) {
+      SnackbarUtils.showError('请选择科目');
+      return;
+    }
+    // 所选科目必须全部在该套餐下有对应规格,否则下单金额与展示不一致
+    final expectedCount = selectedSingleSpecNames.length;
+    if (specs.length != expectedCount) {
+      SnackbarUtils.showError('所选科目暂不支持该套餐');
+      return;
+    }
+
+    _isPaying = true;
+
+    try {
+      SnackbarUtils.showInfo('正在发起支付...');
+
+      // 1. iOS 下单:subject_ids 传所选规格覆盖的三级科目 ID(逗号分隔)
+      final subjectIds = _collectSubjectIds(specs);
+      final orderResponse = await ApiClient.to.post(
+        'addons/exam/pay/createIosMemberOrder',
+        data: {
+          'member_config_id': pkg.id,
+          'subject_ids': subjectIds,
+        },
+        options: Options(contentType: Headers.formUrlEncodedContentType),
+      );
+
+      final data = orderResponse.data is Map
+          ? (orderResponse.data['data'] is Map
+              ? orderResponse.data['data']
+              : orderResponse.data)
+          : null;
+      final orderSn = data is Map ? data['order_sn']?.toString() : null;
+      final productId = data is Map ? data['product_id']?.toString() : null;
+      if (orderSn == null ||
+          orderSn.isEmpty ||
+          productId == null ||
+          productId.isEmpty) {
+        _isPaying = false;
+        SnackbarUtils.showError('创建订单失败');
+        return;
+      }
+
+      // 2. 落盘待校验订单(购买中断/校验失败由 IapService 启动补单兜底)
+      IapService.to.savePendingOrder(
+        orderSn: orderSn,
+        productId: productId,
+        subjectId: _resolveSubjectId(),
+      );
+
+      // 3. StoreKit 购买 + 凭证校验(成功时 IapService 已刷新会员态)
+      final result = await IapService.to.buy(
+        productId: productId,
+        orderSn: orderSn,
+      );
+      switch (result.status) {
+        case IapPayStatus.success:
+          _isPaying = false;
+          SnackbarUtils.showSuccess('支付成功');
+          _onPaySuccess();
+          break;
+        case IapPayStatus.cancelled:
+          _isPaying = false;
+          SnackbarUtils.showInfo('支付已取消');
+          break;
+        case IapPayStatus.failed:
+          _isPaying = false;
+          SnackbarUtils.showError(result.message);
+          break;
       }
     } on DioException catch (e) {
       _isPaying = false;

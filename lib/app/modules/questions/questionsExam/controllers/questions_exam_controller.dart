@@ -4,6 +4,7 @@ import '../../../../services/global_project_controller.dart';
 import '../../../../data/providers/api_client.dart';
 import '../../../../data/models/category_model.dart';
 import '../../../../data/models/project_model.dart';
+import 'package:xmshop/app/utils/app_log.dart';
 
 class QuestionsExamController extends GetxController {
   // 全局项目控制器 - 延迟初始化
@@ -18,6 +19,10 @@ class QuestionsExamController extends GetxController {
   RxList<Category> categories = <Category>[].obs;
   RxList<CategoryChild> subjects = <CategoryChild>[].obs;
   final RxInt currentSubjectIndex = 0.obs;
+
+  // ★2026-08-14 修复:ever() Worker 需手动释放,否则挂载在全局 Rx 上累积僵尸监听
+  Worker? _projectWorker;
+  Worker? _subjectWorker;
 
   // 加载状态
   bool isLoading = false;
@@ -115,7 +120,7 @@ class QuestionsExamController extends GetxController {
       fetchSubjects();
 
       // 监听全局项目变化
-      ever<Project?>(globalController.currentProject, (project) {
+      _projectWorker = ever<Project?>(globalController.currentProject, (project) {
         if (project != null) {
           fetchSubjects();
         }
@@ -123,7 +128,7 @@ class QuestionsExamController extends GetxController {
     }
 
     // 监听科目切换，获取对应试卷列表
-    ever(currentSubjectIndex, (index) {
+    _subjectWorker = ever(currentSubjectIndex, (index) {
       if (subjects.isNotEmpty && index >= 0 && index < subjects.length) {
         final subjectId = subjects[index].id;
         // 如果该科目没有数据且未在加载中，则请求数据
@@ -190,7 +195,7 @@ class QuestionsExamController extends GetxController {
         }
       }
     } catch (e) {
-      print('Fetch exam papers error: $e');
+      AppLog.d('Fetch exam papers error: $e');
       // 出错时也设为空列表，避免无限重试
       if (!examPapersMap.containsKey(subjectId)) {
         examPapersMap[subjectId] = [];
@@ -256,7 +261,7 @@ class QuestionsExamController extends GetxController {
         }
       }
     } catch (e) {
-      print('Load more exam papers error: $e');
+      AppLog.d('Load more exam papers error: $e');
       examLoadErrorMap[subjectId] = '加载失败，点击重试';
     } finally {
       examIsLoadingMoreMap[subjectId] = false;
@@ -368,6 +373,8 @@ class QuestionsExamController extends GetxController {
 
   @override
   void onClose() {
+    _projectWorker?.dispose();
+    _subjectWorker?.dispose();
     pageController.dispose();
     for (final sc in _scrollControllers.values) {
       sc.dispose();

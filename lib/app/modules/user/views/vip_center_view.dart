@@ -3,12 +3,26 @@ import 'package:get/get.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../services/screenAdapter.dart';
+import '../../../components/common_app_bar.dart';
+import '../../../components/common_empty_state.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/providers/api_client.dart';
-import '../../../components/common_dialog.dart';
+import '../../../data/models/member_package_model.dart';
 import '../../../services/snackbar_utils.dart';
 import '../controllers/vip_center_controller.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+
+/// 价格格式化:去掉多余小数位(29.90 → 29.9,19.00 → 19)
+String _formatPrice(double value) {
+  var text = value.toStringAsFixed(2);
+  if (text.endsWith('0')) {
+    text = text.substring(0, text.length - 1);
+  }
+  if (text.endsWith('.0')) {
+    text = text.substring(0, text.length - 2);
+  }
+  return text;
+}
 
 class VipCenterView extends GetView<VipCenterController> {
   const VipCenterView({Key? key}) : super(key: key);
@@ -16,7 +30,7 @@ class VipCenterView extends GetView<VipCenterController> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6FB),
+      backgroundColor: const Color(0xFFEEF4FF),
       body: SafeArea(
         child: Stack(
           children: [
@@ -25,17 +39,42 @@ class VipCenterView extends GetView<VipCenterController> {
                 _buildHeader(),
                 Expanded(
                   child: Obx(() {
-                    final isMember = AuthService.to.isMember;
+                    if (controller.isLoadingPackages.value) {
+                      return Padding(
+                        padding:
+                            EdgeInsets.only(top: ScreenAdapter.height(120)),
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF3D7CFF),
+                          ),
+                        ),
+                      );
+                    }
+                    if (controller.currentTabSpecs.isEmpty) {
+                      return Padding(
+                        padding:
+                            EdgeInsets.only(top: ScreenAdapter.height(120)),
+                        child: CommonEmptyState(
+                          icon: Icons.card_membership_outlined,
+                          title: '暂无会员套餐',
+                          titleFontSize: ScreenAdapter.fontSize(30),
+                          iconSize: 120,
+                        ),
+                      );
+                    }
                     return ListView(
                       padding: EdgeInsets.symmetric(
                         horizontal: ScreenAdapter.width(30),
                         vertical: ScreenAdapter.height(20),
                       ),
                       children: [
-                        _buildPlansSection(),
+                        _buildDurationPriceSection(),
+                        _buildSubjectSection(),
                         SizedBox(height: ScreenAdapter.height(40)),
-                        if (!isMember)
-                          SizedBox(height: ScreenAdapter.height(180)),
+                        _buildBenefitsTitle(),
+                        SizedBox(height: ScreenAdapter.height(30)),
+                        _buildBenefitsGrid(),
+                        SizedBox(height: ScreenAdapter.height(200)),
                       ],
                     );
                   }),
@@ -50,85 +89,49 @@ class VipCenterView extends GetView<VipCenterController> {
   }
 
   Widget _buildHeader() {
-    final backgroundHeight = ScreenAdapter.height(400);
-    final cardHeight = ScreenAdapter.height(400);
-    final cardWidth = ScreenAdapter.width(1000);
-    final headerHeight = backgroundHeight + cardHeight * 0.5;
+    final titleBarHeight = ScreenAdapter.height(112);
+    final gapHeight = ScreenAdapter.height(26);
+    final backgroundHeight =
+        ScreenAdapter.height(520) - titleBarHeight - gapHeight;
 
-    return SizedBox(
-      height: headerHeight,
-      child: Stack(
-        children: [
-          Container(
-            width: double.infinity,
-            height: backgroundHeight,
-            padding: EdgeInsets.fromLTRB(
-              ScreenAdapter.width(20),
-              ScreenAdapter.height(10),
-              ScreenAdapter.width(20),
-              ScreenAdapter.height(20),
+    return Column(
+      children: [
+        CommonAppBar(
+          title: '会员中心',
+          toolbarHeight: titleBarHeight,
+          actions: [SizedBox(width: ScreenAdapter.width(96))],
+        ),
+        SizedBox(height: gapHeight),
+        Container(
+          width: double.infinity,
+          height: backgroundHeight,
+          padding: EdgeInsets.fromLTRB(
+            ScreenAdapter.width(20),
+            ScreenAdapter.height(20),
+            ScreenAdapter.width(20),
+            ScreenAdapter.height(20),
+          ),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF3D7CFF), Color(0xFF1E5AE0)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
             ),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF151A2F), Color(0xFF11121F)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(ScreenAdapter.width(40)),
-                bottomRight: Radius.circular(ScreenAdapter.width(40)),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back_ios,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      onPressed: () {
-                        Get.back();
-                      },
-                    ),
-                    Expanded(
-                      child: Center(
-                        child: Text(
-                          '会员中心',
-                          style: TextStyle(
-                            fontSize: ScreenAdapter.fontSize(46),
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: ScreenAdapter.width(80),
-                    ),
-                  ],
-                ),
-                SizedBox(height: ScreenAdapter.height(26)),
-              ],
+            borderRadius: BorderRadius.only(
+              bottomLeft: Radius.circular(40),
+              bottomRight: Radius.circular(40),
             ),
           ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: SizedBox(
-                width: cardWidth,
-                height: cardHeight,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
                 child: _buildVipInfoCard(),
               ),
-            ),
-          )
-        ],
-      ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -148,94 +151,54 @@ class VipCenterView extends GetView<VipCenterController> {
           : 'uploads/20260221/d058aab5aa43767fd921131ae4a9a88e.png';
       final url = ApiClient.getFullImageUrl(relativePath);
       final radius = ScreenAdapter.width(70);
-      final memberStatus = AuthService.to.memberStatus.value;
+      // 状态:全部科目均已开通才显示"已开通";
+      final specs = controller.currentTabSpecs;
+      final allOpened = specs.isNotEmpty && specs.every((s) => s.opened);
+      final statusText = allOpened ? '已开通科目会员' : '未开通科目会员';
 
       return Container(
         width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF27324A), Color(0xFF1F2638)],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
-          borderRadius: BorderRadius.circular(
-            ScreenAdapter.width(34),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.35),
-              blurRadius: 50,
-              spreadRadius: 2,
-              offset: Offset(0, ScreenAdapter.height(30)),
-            ),
-          ],
+        padding: EdgeInsets.symmetric(
+          horizontal: ScreenAdapter.width(30),
+          vertical: ScreenAdapter.height(20),
         ),
-        child: Stack(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(ScreenAdapter.width(34)),
+        ),
+        child: Row(
           children: [
-            Positioned(
-              right: ScreenAdapter.width(36),
-              bottom: ScreenAdapter.height(26),
-              child: Icon(
-                Icons.emoji_events,
-                size: ScreenAdapter.width(360),
-                color: Colors.white.withOpacity(0.08),
+            Container(
+              padding: EdgeInsets.all(ScreenAdapter.width(3)),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+              ),
+              child: CircleAvatar(
+                radius: radius,
+                backgroundColor: Colors.white,
+                backgroundImage: NetworkImage(url),
               ),
             ),
-            Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: ScreenAdapter.width(40),
-                vertical: ScreenAdapter.height(36),
-              ),
-              child: Row(
+            SizedBox(width: ScreenAdapter.width(28)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
-                    padding: EdgeInsets.all(ScreenAdapter.width(3)),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFF1B2140),
-                    ),
-                    child: CircleAvatar(
-                      radius: radius,
-                      backgroundColor: Colors.white,
-                      backgroundImage: NetworkImage(url),
+                  Text(
+                    displayName,
+                    style: TextStyle(
+                      fontSize: ScreenAdapter.fontSize(50),
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
                     ),
                   ),
-                  SizedBox(width: ScreenAdapter.width(28)),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          displayName,
-                          style: TextStyle(
-                            fontSize: ScreenAdapter.fontSize(50),
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white,
-                          ),
-                        ),
-                        SizedBox(height: ScreenAdapter.height(10)),
-                        Text(
-                          memberStatus == 1 ? '您已是VIP会员' : '升级会员享额外特权',
-                          style: TextStyle(
-                            fontSize: ScreenAdapter.fontSize(30),
-                            color: Colors.white.withOpacity(0.82),
-                          ),
-                        ),
-                        if (memberStatus == 1)
-                          Padding(
-                            padding:
-                                EdgeInsets.only(top: ScreenAdapter.height(8)),
-                            child: Text(
-                              '有效期至 ${AuthService.to.memberExpireTimeText ?? ''}',
-                              style: TextStyle(
-                                fontSize: ScreenAdapter.fontSize(26),
-                                color: Colors.white.withOpacity(0.6),
-                              ),
-                            ),
-                          ),
-                      ],
+                  SizedBox(height: ScreenAdapter.height(10)),
+                  Text(
+                    statusText,
+                    style: TextStyle(
+                      fontSize: ScreenAdapter.fontSize(30),
+                      color: Colors.white.withOpacity(0.85),
                     ),
                   ),
                 ],
@@ -247,48 +210,29 @@ class VipCenterView extends GetView<VipCenterController> {
     });
   }
 
-  Widget _buildPlansSection() {
+  /// 时长价格区域:标题「开通时长」+ 卡片(有效期截止/有效期天数/日均价)
+  Widget _buildDurationPriceSection() {
     return Obx(() {
-      if (AuthService.to.isMember) {
-        return _buildMemberBenefitsCard();
+      final pkg = controller.package;
+      if (pkg == null) {
+        return const SizedBox.shrink();
       }
-      final configs = controller.memberConfigs;
-      final List<Widget> cards = [];
-      final int count = configs.length < 3 ? configs.length : 3;
-      for (int i = 0; i < count; i++) {
-        if (i > 0) {
-          cards.add(SizedBox(width: ScreenAdapter.width(10)));
-        }
-        cards.add(
-          Expanded(
-            child: GestureDetector(
-              onTap: () => controller.selectPlan(i),
-              child: _buildPlanItemFromConfig(
-                configs[i],
-                isSelected: controller.selectedIndex.value == i,
-              ),
-            ),
-          ),
-        );
-      }
+      final info = controller.packagePriceInfo(pkg);
+      final days = pkg.days;
+      final expireDate = DateTime.now().add(Duration(days: days));
+      final expireText =
+          '${expireDate.year}-${expireDate.month.toString().padLeft(2, '0')}-${expireDate.day.toString().padLeft(2, '0')}';
+      final perDay = days > 0 ? info.price / days : 0.0;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(height: ScreenAdapter.height(20)),
-          Text(
-            '会员开通',
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(43),
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFF333333),
-            ),
-          ),
-          SizedBox(height: ScreenAdapter.height(40)),
+          SizedBox(height: ScreenAdapter.height(30)),
           Container(
+            width: double.infinity,
             padding: EdgeInsets.symmetric(
-              horizontal: ScreenAdapter.width(20),
-              vertical: ScreenAdapter.height(26),
+              horizontal: ScreenAdapter.width(30),
+              vertical: ScreenAdapter.height(30),
             ),
             decoration: BoxDecoration(
               color: Colors.white,
@@ -297,263 +241,299 @@ class VipCenterView extends GetView<VipCenterController> {
               ),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: cards,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: ScreenAdapter.width(60),
+                  height: ScreenAdapter.width(60),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF3D7CFF),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.check,
+                    color: Colors.white,
+                    size: ScreenAdapter.fontSize(36),
+                  ),
+                ),
+                SizedBox(width: ScreenAdapter.width(20)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '开通时长',
+                        style: TextStyle(
+                          fontSize: ScreenAdapter.fontSize(40),
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF333333),
+                        ),
+                      ),
+                      SizedBox(height: ScreenAdapter.height(16)),
+                      Text(
+                        '有效期截止：$expireText',
+                        style: TextStyle(
+                          fontSize: ScreenAdapter.fontSize(30),
+                          color: const Color(0xFF666666),
+                        ),
+                      ),
+                      SizedBox(height: ScreenAdapter.height(12)),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '有效期时长：$days 日',
+                              style: TextStyle(
+                                fontSize: ScreenAdapter.fontSize(30),
+                                color: const Color(0xFF666666),
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${perDay.toStringAsFixed(2)} 元/天',
+                            style: TextStyle(
+                              fontSize: ScreenAdapter.fontSize(32),
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF3D7CFF),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          SizedBox(height: ScreenAdapter.height(30)),
-          const _PlansRichTextWidget(),
         ],
       );
     });
   }
 
-  Widget _buildMemberBenefitsCard() {
-    final expireText = AuthService.to.memberExpireTimeText ?? '';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(height: ScreenAdapter.height(20)),
-        Text(
-          '会员权益',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(43),
-            fontWeight: FontWeight.w500,
-            color: const Color(0xFF333333),
-          ),
-        ),
-        SizedBox(height: ScreenAdapter.height(40)),
-        Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: ScreenAdapter.width(30),
-            vertical: ScreenAdapter.height(40),
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(
-              ScreenAdapter.width(24),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.verified,
-                    color: const Color(0xFFE89A3C),
-                    size: ScreenAdapter.width(48),
-                  ),
-                  SizedBox(width: ScreenAdapter.width(16)),
-                  Expanded(
-                    child: Text(
-                      '您已是VIP会员，享全部特权',
-                      style: TextStyle(
-                        fontSize: ScreenAdapter.fontSize(36),
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF333333),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: ScreenAdapter.height(24)),
-              Text(
-                '有效期至 $expireText',
-                style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(30),
-                  color: const Color(0xFF999999),
-                ),
-              ),
-              SizedBox(height: ScreenAdapter.height(24)),
-              _buildBenefitItem(Icons.book, '海量题库免费练习'),
-              _buildBenefitItem(Icons.assignment_turned_in, '智能批改与解析'),
-              _buildBenefitItem(Icons.emoji_events, '专属学习报告'),
-              _buildBenefitItem(Icons.support_agent, '优先客服响应'),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBenefitItem(IconData icon, String text) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(16)),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: ScreenAdapter.width(40),
-            color: const Color(0xFFE89A3C),
-          ),
-          SizedBox(width: ScreenAdapter.width(20)),
-          Text(
-            text,
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(30),
-              color: const Color(0xFF666666),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlanItemFromConfig(Map<String, dynamic> config,
-      {bool isSelected = false}) {
-    final tag = config['tag']?.toString() ?? '会员套餐';
-    final title = config['title']?.toString() ?? '会员';
-    final price = config['price']?.toString() ?? '';
-    final desc = config['desc']?.toString() ?? '';
-    return _buildPlanItem(
-      tag: tag,
-      title: title,
-      price: price,
-      desc: desc,
-      isSelected: isSelected,
-    );
-  }
-
-  Widget _buildPlanItem({
-    required String tag,
-    required String title,
-    required String price,
-    required String desc,
-    bool isSelected = false,
-  }) {
-    return Container(
-      width: ScreenAdapter.width(280),
-      height: ScreenAdapter.height(430),
-      padding: EdgeInsets.all(ScreenAdapter.width(16)),
-      decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFFFBF1E5) : const Color(0xFFF9FAFF),
-        borderRadius: BorderRadius.circular(
-          ScreenAdapter.width(20),
-        ),
-        border: Border.all(
-          color: isSelected ? const Color(0xFFE89A3C) : const Color(0xFFE5E6EC),
-          width: isSelected ? 1.2 : 0.8,
-        ),
-      ),
-      child: Column(
+  /// 选择科目(单科规格,多选):按钮选中态联动
+  Widget _buildSubjectSection() {
+    return Obx(() {
+      final specs = controller.currentTabSpecs;
+      if (specs.isEmpty) {
+        return const SizedBox.shrink();
+      }
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Align(
-            alignment: Alignment.topLeft,
-            child: Container(
-              height: ScreenAdapter.height(60),
-              padding: EdgeInsets.symmetric(
-                horizontal: ScreenAdapter.width(32),
-              ),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF323758), Color(0xFF141621)],
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                ),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(ScreenAdapter.width(20)),
-                  bottomRight: Radius.circular(ScreenAdapter.width(20)),
-                ),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                tag,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(24),
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(height: ScreenAdapter.height(20)),
+          SizedBox(height: ScreenAdapter.height(40)),
           Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            '科目列表',
             style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(40),
+              fontSize: ScreenAdapter.fontSize(44),
               fontWeight: FontWeight.w500,
               color: const Color(0xFF333333),
             ),
           ),
-          SizedBox(height: ScreenAdapter.height(8)),
-          Text(
-            price,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(60),
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFFE89A3C),
-            ),
-          ),
-          SizedBox(height: ScreenAdapter.height(4)),
-          Text(
-            desc,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(30),
-              color: const Color(0xFF999999),
-            ),
-          ),
-          SizedBox(height: ScreenAdapter.height(4)),
-          Text(
-            '更多权益',
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(26),
-              color: const Color(0xFF999999),
-            ),
+          SizedBox(height: ScreenAdapter.height(30)),
+          Wrap(
+            spacing: ScreenAdapter.width(20),
+            runSpacing: ScreenAdapter.height(20),
+            children: specs.map((s) => _buildSubjectButton(s)).toList(),
           ),
         ],
+      );
+    });
+  }
+
+  Widget _buildSubjectButton(MemberSpec spec) {
+    final isSelected = controller.isSpecSelected(spec.name);
+
+    // 已开通的科目:置灰不可选
+    if (spec.opened) {
+      return Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: ScreenAdapter.width(36),
+          vertical: ScreenAdapter.height(16),
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(ScreenAdapter.width(12)),
+          border: Border.all(color: const Color(0xFFE0E3E8), width: 1),
+        ),
+        child: Text(
+          spec.name,
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(32),
+            color: const Color(0xFFB0B3BA),
+          ),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: () => controller.toggleSingleSpec(spec.name),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: ScreenAdapter.width(36),
+          vertical: ScreenAdapter.height(16),
+        ),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF3D7CFF) : Colors.white,
+          borderRadius: BorderRadius.circular(ScreenAdapter.width(12)),
+          border: Border.all(
+            color:
+                isSelected ? const Color(0xFF3D7CFF) : const Color(0xFFD0D5DD),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          spec.name,
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(32),
+            color: isSelected ? Colors.white : const Color(0xFF3D7CFF),
+            fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 会员权益标题
+  Widget _buildBenefitsTitle() {
+    return Text(
+      '会员权益',
+      style: TextStyle(
+        fontSize: ScreenAdapter.fontSize(44),
+        fontWeight: FontWeight.w500,
+        color: const Color(0xFF333333),
+      ),
+    );
+  }
+
+  /// 会员权益网格(固定死,3列2行)
+  Widget _buildBenefitsGrid() {
+    final items = [
+      _BenefitItem(
+        icon: Icons.menu_book,
+        iconColor: const Color(0xFF3D7CFF),
+        title: '章节练习：',
+        subtitle: '享100%题量',
+      ),
+      _BenefitItem(
+        icon: Icons.assignment,
+        iconColor: const Color(0xFF3D7CFF),
+        title: '模拟题：',
+        subtitle: '全真模拟演练',
+      ),
+      _BenefitItem(
+        icon: Icons.auto_stories,
+        iconColor: const Color(0xFF3D7CFF),
+        title: '历年真题：',
+        subtitle: '真题演练',
+      ),
+      _BenefitItem(
+        icon: Icons.verified,
+        iconColor: const Color(0xFF3D7CFF),
+        title: '每日一练：',
+        subtitle: '每天5-10题',
+      ),
+      _BenefitItem(
+        icon: Icons.fact_check,
+        iconColor: const Color(0xFF3D7CFF),
+        title: '考前点题：',
+        subtitle: '考前10天开放',
+      ),
+      _BenefitItem(
+        icon: Icons.dashboard,
+        iconColor: const Color(0xFF3D7CFF),
+        title: '章节真题：',
+        subtitle: '全节真题',
+      ),
+    ];
+
+    return Container(
+      padding: EdgeInsets.all(ScreenAdapter.width(24)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(ScreenAdapter.width(24)),
+      ),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: ScreenAdapter.width(16),
+          mainAxisSpacing: ScreenAdapter.height(20),
+          childAspectRatio: 1.0,
+        ),
+        itemCount: items.length,
+        itemBuilder: (context, index) => items[index],
       ),
     );
   }
 
   Widget _buildBottomPayBar() {
     return Obx(() {
-      if (AuthService.to.isMember) {
+      if (!controller.hasSelectableSpec) {
         return const SizedBox.shrink();
       }
       return _BottomPayBarWidget(controller: controller);
     });
   }
+}
 
-  /// 确认支付弹窗 - 使用公共弹窗组件
-  void _showConfirmDialog() async {
-    final configs = controller.memberConfigs;
-    String priceInfo = '';
-    if (configs.isNotEmpty && controller.selectedIndex.value < configs.length) {
-      final selected = configs[controller.selectedIndex.value];
-      priceInfo = '${selected["title"] ?? ""} - ${selected["price"] ?? ""}';
-    }
+/// 会员权益单项
+class _BenefitItem extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
 
-    final payMethods = controller.payMethods;
-    final selectedCode = controller.selectedPayCode.value;
-    final selectedMethod = payMethods.firstWhere(
-      (m) => m['code']?.toString() == selectedCode,
-      orElse: () => <String, dynamic>{'name': '默认'},
+  const _BenefitItem({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F8FF),
+        borderRadius: BorderRadius.circular(ScreenAdapter.width(16)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: EdgeInsets.all(ScreenAdapter.width(10)),
+            decoration: const BoxDecoration(
+              color: Color(0xFFE8F0FF),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: iconColor,
+              size: ScreenAdapter.fontSize(44),
+            ),
+          ),
+          SizedBox(height: ScreenAdapter.height(12)),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: ScreenAdapter.fontSize(28),
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF333333),
+            ),
+          ),
+          SizedBox(height: ScreenAdapter.height(4)),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: ScreenAdapter.fontSize(26),
+              color: const Color(0xFF666666),
+            ),
+          ),
+        ],
+      ),
     );
-    final payName = selectedMethod['name']?.toString() ?? '默认支付';
-
-    final content = '即将使用$payName支付\n$priceInfo';
-
-    final confirmed = await CommonDialog.show(
-      title: '确认开通',
-      content: content,
-      confirmText: '立即支付',
-      cancelText: '取消',
-      barrierDismissible: false,
-      confirmColor: const Color(0xFFE89A3C),
-    );
-
-    if (confirmed) {
-      controller.doPay();
-    }
   }
 }
 
@@ -569,11 +549,6 @@ class _BottomPayBarWidget extends StatefulWidget {
 class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
   bool isExpanded = false;
   bool _agreed = false;
-
-  @override
-  void initState() {
-    super.initState();
-  }
 
   Widget _buildPayOption({
     required String svgPath,
@@ -619,11 +594,11 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isSelected
-                      ? const Color(0xFF07C160)
+                      ? const Color(0xFF3D7CFF)
                       : const Color(0xFFCCCCCC),
                   width: 2,
                 ),
-                color: isSelected ? const Color(0xFF07C160) : Colors.white,
+                color: isSelected ? const Color(0xFF3D7CFF) : Colors.white,
               ),
               child: isSelected
                   ? Icon(Icons.check, size: checkSize, color: Colors.white)
@@ -654,6 +629,8 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
       final currentName = currentMethod['name']?.toString() ?? '';
       final currentSvg = _getSvgForCode(currentCode);
       final isWechat = currentCode == 'wechat';
+      // 仅一种支付方式时(如 iOS 苹果内购)不显示展开箭头与列表
+      final singleMethod = payMethods.length == 1;
 
       return Container(
         padding: EdgeInsets.symmetric(
@@ -667,7 +644,10 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
         child: Column(
           children: [
             GestureDetector(
-              onTap: () => setState(() => isExpanded = !isExpanded),
+              onTap: () {
+                if (singleMethod) return;
+                setState(() => isExpanded = !isExpanded);
+              },
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -710,26 +690,29 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
                       ],
                     ],
                   ),
-                  Row(
-                    children: [
-                      Text(
-                        isExpanded ? '收起' : '更多支付方式',
-                        style: TextStyle(
-                            fontSize: ScreenAdapter.fontSize(32),
-                            color: const Color(0xFF999999)),
-                      ),
-                      SizedBox(width: ScreenAdapter.width(10)),
-                      Icon(
-                        isExpanded ? Icons.arrow_downward : Icons.arrow_upward,
-                        size: ScreenAdapter.fontSize(32),
-                        color: const Color(0xFF999999),
-                      ),
-                    ],
-                  ),
+                  if (!singleMethod)
+                    Row(
+                      children: [
+                        Text(
+                          isExpanded ? '收起' : '更多支付方式',
+                          style: TextStyle(
+                              fontSize: ScreenAdapter.fontSize(32),
+                              color: const Color(0xFF999999)),
+                        ),
+                        SizedBox(width: ScreenAdapter.width(10)),
+                        Icon(
+                          isExpanded
+                              ? Icons.arrow_downward
+                              : Icons.arrow_upward,
+                          size: ScreenAdapter.fontSize(32),
+                          color: const Color(0xFF999999),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
-            if (isExpanded) ...[
+            if (isExpanded && !singleMethod) ...[
               SizedBox(height: ScreenAdapter.height(24)),
               Divider(
                   height: 1,
@@ -780,6 +763,8 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
         return 'assets/fonts/wechat.svg';
       case 'alipay':
         return 'assets/fonts/zhifubao.svg';
+      case 'apple':
+        return 'assets/fonts/apple.svg';
       default:
         return 'assets/fonts/wechat.svg';
     }
@@ -787,14 +772,12 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
 
   Widget _buildPriceSection() {
     return Obx(() {
-      final configs = widget.controller.memberConfigs;
-      final selectedIndex = widget.controller.selectedIndex.value;
-      if (configs.isEmpty || selectedIndex >= configs.length) {
+      final pkg = widget.controller.package;
+      if (pkg == null) {
         return const SizedBox.shrink();
       }
-      final selected = configs[selectedIndex];
-      final price = selected['price']?.toString() ?? '';
-      final displayPrice = price.startsWith('￥') ? price : '￥$price';
+      final info = widget.controller.packagePriceInfo(pkg);
+      final displayPrice = '¥${_formatPrice(info.price)}';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -805,7 +788,7 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
               style: TextStyle(
                 fontSize: ScreenAdapter.fontSize(64),
                 fontWeight: FontWeight.w600,
-                color: const Color(0xFFE89A3C),
+                color: const Color(0xFF3D7CFF),
               ),
             ),
           ),
@@ -824,11 +807,11 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: _agreed
-                          ? const Color(0xFFE89A3C)
+                          ? const Color(0xFF3D7CFF)
                           : Colors.transparent,
                       border: Border.all(
                         color: _agreed
-                            ? const Color(0xFFE89A3C)
+                            ? const Color(0xFF3D7CFF)
                             : const Color(0xFFCCCCCC),
                         width: 1.5,
                       ),
@@ -853,7 +836,7 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
                       '《服务协议》',
                       style: TextStyle(
                         fontSize: ScreenAdapter.fontSize(26),
-                        color: const Color(0xFFE89A3C),
+                        color: const Color(0xFF3D7CFF),
                       ),
                     ),
                   ),
@@ -875,44 +858,51 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
   }
 
   Widget _buildPayButton() {
-    return SizedBox(
-      width: ScreenAdapter.width(360),
-      height: ScreenAdapter.height(110),
-      child: ElevatedButton(
-        onPressed: () {
-          if (!_agreed) {
-            SnackbarUtils.showInfo('请先阅读并同意《服务协议》');
-            return;
-          }
-          widget.controller.doPay();
-        },
-        style: ElevatedButton.styleFrom(
-          padding: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(ScreenAdapter.width(55))),
-        ).copyWith(
-          backgroundColor: MaterialStateProperty.all(Colors.transparent),
-          shadowColor: MaterialStateProperty.all(
-              const Color(0xFFE5C07B).withOpacity(0.4)),
-        ),
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(ScreenAdapter.width(55)),
-            gradient: const LinearGradient(
-                colors: [Color(0xFFF4D18C), Color(0xFFE6B870)]),
+    return Obx(() {
+      final pkg = widget.controller.package;
+      var priceText = '';
+      if (pkg != null) {
+        priceText = _formatPrice(widget.controller.packagePriceInfo(pkg).price);
+      }
+      return SizedBox(
+        width: ScreenAdapter.width(360),
+        height: ScreenAdapter.height(110),
+        child: ElevatedButton(
+          onPressed: () {
+            if (!_agreed) {
+              SnackbarUtils.showInfo('请先阅读并同意《服务协议》');
+              return;
+            }
+            widget.controller.doPay();
+          },
+          style: ElevatedButton.styleFrom(
+            padding: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(ScreenAdapter.width(55))),
+          ).copyWith(
+            backgroundColor: MaterialStateProperty.all(Colors.transparent),
+            shadowColor: MaterialStateProperty.all(
+                const Color(0xFF3D7CFF).withOpacity(0.4)),
           ),
-          child: Center(
-            child: Text(
-              '立即开通',
-              style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(36),
-                  fontWeight: FontWeight.w600,
-                  color: const Color.fromARGB(255, 255, 255, 255)),
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(ScreenAdapter.width(55)),
+              gradient: const LinearGradient(
+                  colors: [Color(0xFF5B9BFF), Color(0xFF3D7CFF)]),
+            ),
+            child: Center(
+              child: Text(
+                priceText.isEmpty ? '立即开通' : '¥$priceText 立即开通',
+                style: TextStyle(
+                    fontSize: ScreenAdapter.fontSize(36),
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white),
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    });
   }
 
   @override
@@ -1078,7 +1068,7 @@ class _ServiceAgreementDialogState extends State<_ServiceAgreementDialog> {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(
-          color: Color(0xFFE89A3C),
+          color: Color(0xFF3D7CFF),
         ),
       );
     }
@@ -1102,122 +1092,6 @@ class _ServiceAgreementDialogState extends State<_ServiceAgreementDialog> {
         _content,
         textStyle: TextStyle(
           fontSize: ScreenAdapter.fontSize(30),
-          height: 1.6,
-          color: const Color(0xFF333333),
-        ),
-      ),
-    );
-  }
-}
-
-/// 会员开通下方富文本内容
-///
-/// 调用富文本接口 `common/richtextContent`（id=6）获取 HTML 内容并展示。
-class _PlansRichTextWidget extends StatefulWidget {
-  const _PlansRichTextWidget();
-
-  @override
-  State<_PlansRichTextWidget> createState() => _PlansRichTextWidgetState();
-}
-
-class _PlansRichTextWidgetState extends State<_PlansRichTextWidget> {
-  String _content = '';
-  bool _isLoading = true;
-  String _error = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchContent();
-  }
-
-  String? _extractText(dynamic value) {
-    if (value == null) return null;
-    if (value is String) return value;
-    if (value is Map) {
-      return _extractText(
-        value['content'] ?? value['text'] ?? value['value'],
-      );
-    }
-    return null;
-  }
-
-  Future<void> _fetchContent() async {
-    try {
-      final response = await ApiClient.to.get(
-        'addons/exam/common/richtextContent',
-        queryParameters: {'id': 6},
-      );
-      final data = response.data;
-
-      String content = '';
-      if (data is String) {
-        content = data;
-      } else if (data is Map) {
-        final candidate =
-            data['data'] ?? data['content'] ?? data['text'] ?? data;
-        final extracted = _extractText(candidate);
-        content = extracted ?? data.toString();
-      } else {
-        content = data?.toString() ?? '';
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _content = content;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = '加载失败：$e';
-        _isLoading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(40)),
-          child: const CircularProgressIndicator(
-            color: Color(0xFFE89A3C),
-          ),
-        ),
-      );
-    }
-    if (_error.isNotEmpty) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: ScreenAdapter.height(40)),
-          child: Text(
-            _error,
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(30),
-              color: const Color(0xFF999999),
-            ),
-          ),
-        ),
-      );
-    }
-    if (_content.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(ScreenAdapter.width(24)),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(
-          ScreenAdapter.width(24),
-        ),
-      ),
-      child: HtmlWidget(
-        _content,
-        textStyle: TextStyle(
-          fontSize: ScreenAdapter.fontSize(28),
           height: 1.6,
           color: const Color(0xFF333333),
         ),

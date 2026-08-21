@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../services/screenAdapter.dart';
+import '../../../components/common_app_bar.dart';
 import '../controllers/complaint_feedback_controller.dart';
 
 class ComplaintFeedbackView extends GetView<ComplaintFeedbackController> {
@@ -10,20 +11,7 @@ class ComplaintFeedbackView extends GetView<ComplaintFeedbackController> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FB),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF333333),
-        centerTitle: true,
-        title: Text(
-          '投诉违规内容',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(40),
-            color: const Color(0xFF333333),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
+      appBar: const CommonAppBar(title: '投诉违规内容'),
       body: Obx(() => Stack(
             children: [
               ListView(

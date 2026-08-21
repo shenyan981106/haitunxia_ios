@@ -104,27 +104,32 @@ class QuestionsFavoriteController extends GetxController {
   final RxString currentSortTime = '录入时间'.obs;
   final RxString currentSortOrder = '新添加在前'.obs;
 
-  // 当前科目ID
-  int? subjectId;
+  // ★2026-08-14 修复:ever() Worker 需手动释放,否则挂载在全局 Rx 上累积僵尸监听
+  Worker? _projectWorker;
 
   @override
   void onInit() {
     super.onInit();
     try {
       globalController = GlobalProjectController.to;
+      // ★监听全局科目(二级科目)变化:切换科目后自动按新科目重拉收藏列表,
+      // 不再依赖路由参数 Get.arguments(全局可变,任何路由 push/pop 都会改写)
+      _projectWorker = ever(globalController.currentProject, (_) {
+        _loadFavorites();
+      });
     } catch (e) {
       debugPrint('GlobalProjectController 获取失败: $e');
-    }
-
-    // 从路由参数中获取 subject_id
-    final args = Get.arguments;
-    if (args != null && args is Map) {
-      subjectId = args['subject_id'];
     }
 
     Future.delayed(const Duration(milliseconds: 100), () {
       _loadFavorites();
     });
+  }
+
+  @override
+  void onClose() {
+    _projectWorker?.dispose();
+    super.onClose();
   }
 
   /// 加载收藏列表（调用 collectList 接口）
@@ -140,14 +145,26 @@ class QuestionsFavoriteController extends GetxController {
     try {
       final params = <String, dynamic>{};
       params['order'] = currentSortOrder.value == '新添加在前' ? 'desc' : 'asc';
+
+      // ★科目过滤以全局当前二级科目为准(collectList 按二级科目 ID 过滤)。
+      // 不依赖路由参数:Get.arguments 为全局可变值,任何路由 push/pop 都会改写,
+      // 切换科目(题库首页 fetchSubjects 异步刷新)后进入可能拿到旧科目 ID。
+      final currentProjectId = globalController.currentProject.value?.id;
+      final subjectId = currentProjectId ??
+          ((Get.arguments is Map) ? Get.arguments['subject_id'] : null);
       if (subjectId != null) {
         params['subject_id'] = subjectId;
       }
+      final requestedSubjectId = subjectId;
 
       final response = await ApiClient.to.getExam(
         'question/collectList',
         queryParameters: params.isEmpty ? null : params,
       );
+
+      // 科目已切换,丢弃过期响应
+      final nowProjectId = globalController.currentProject.value?.id;
+      if (nowProjectId != requestedSubjectId) return;
 
       if (response.statusCode == 200) {
         final data = response.data;

@@ -10,13 +10,13 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import '../../../services/screenAdapter.dart';
 import '../../../data/providers/api_client.dart';
-import '../../../data/services/auth_service.dart';
 // TODO: 支付对接完成后恢复导入
 import '../../../routes/app_pages.dart';
 import '../../../components/common_dialog.dart';
 import '../controllers/details_controller.dart';
 import '../../../services/snackbar_utils.dart';
 import '../../../components/customer_service_dialog.dart';
+import '../../../components/common_app_bar.dart';
 
 // 单个目录项组件
 class CatalogItemWidget extends StatefulWidget {
@@ -405,21 +405,12 @@ class DetailsView extends GetView<DetailsController> {
             controller.isFullScreen.value ? Colors.black : Colors.white,
         appBar: controller.isFullScreen.value
             ? null
-            : AppBar(
-                title: Text(
-                  '学习目录',
-                  style: TextStyle(
-                    fontSize: ScreenAdapter.fontSize(46),
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF333333),
-                  ),
-                ),
-                centerTitle: true,
-                backgroundColor: Colors.white,
-                elevation: 0,
-                leading: IconButton(
-                  icon: Icon(Icons.arrow_back_ios, color: Colors.black),
-                  onPressed: () => Get.back(),
+            : CommonAppBar(
+                title: '学习目录',
+                titleStyle: TextStyle(
+                  fontSize: ScreenAdapter.fontSize(46),
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF333333),
                 ),
               ),
         body: Obx(() {
@@ -443,16 +434,13 @@ class DetailsView extends GetView<DetailsController> {
                   color: Colors.white,
                   child: Column(
                     children: [
-                      _buildTabs(),
+                      // ★2026-08-17 改版:Tab 栏(介绍/目录/资料)注释隐藏,后续如需恢复取消注释即可
+                      // _buildTabs(),
                       Expanded(
                         child: Obx(() {
-                          if (controller.currentTabIndex.value == 0) {
-                            return _buildIntroPage();
-                          }
-                          if (controller.currentTabIndex.value == 1) {
-                            return _buildCatalogList();
-                          }
-                          return _buildMaterialsList();
+                          // ★改版:Tab 内容区替换为新的课程信息页(标题/价格/有效期/总课时/教研团队/课程说明)
+                          // 旧 Tab 内容(介绍/目录/资料)方法保留在文件中,恢复 Tab 后改回即可
+                          return _buildCourseInfoPage();
                         }),
                       ),
                     ],
@@ -532,6 +520,258 @@ class DetailsView extends GetView<DetailsController> {
     );
   }
 
+  /// 2026-08-17 改版:课程信息页(替代原 Tab 内容区)
+  /// 顺序:标题 → 价格 → 课程有效期/总课时 → 教研团队(横向滚动) → 课程说明(富文本)
+  Widget _buildCourseInfoPage() {
+    final detail = controller.courseDetail;
+    final String title = detail['title']?.toString() ?? '';
+    final String description = detail['description']?.toString() ??
+        detail['intro']?.toString() ??
+        detail['content']?.toString() ??
+        '';
+    final bool isFree = detail['is_free']?.toString() == '1';
+    final String price = isFree ? '免费' : '${detail['price']}';
+    final String originalPrice = detail['original_price']?.toString() ?? '';
+
+    // 课程有效期:优先 study_period_text,其次 service_end_date,兜底 study_period 天数换算
+    final String studyPeriodText =
+        (detail['study_period_text']?.toString() ?? '').trim();
+    final String serviceEndDate =
+        (detail['service_end_date']?.toString() ?? '').trim();
+    final String studyPeriod = studyPeriodText.isNotEmpty
+        ? studyPeriodText
+        : (serviceEndDate.isNotEmpty
+            ? serviceEndDate
+            : _formatStudyPeriod(detail['study_period']));
+    // 总课时
+    final String totalLessons =
+        (detail['total_lessons']?.toString() ?? '').trim();
+    // 教研团队
+    final List teacherList = (detail['teacher_list'] as List?) ?? const [];
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(
+        horizontal: ScreenAdapter.width(32),
+        vertical: ScreenAdapter.height(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 课程标题
+          if (title.isNotEmpty) ...[
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(44),
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF333333),
+              ),
+            ),
+            SizedBox(height: ScreenAdapter.height(16)),
+          ],
+
+          // 价格展示(红色字体)
+          if (isFree)
+            Text(
+              price,
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(36),
+                fontWeight: FontWeight.w500,
+                color: Color(0xFFFF4D4F),
+              ),
+            )
+          else
+            Row(
+              children: [
+                Text(
+                  '¥$price',
+                  style: TextStyle(
+                    fontSize: ScreenAdapter.fontSize(48),
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFFF4D4F),
+                  ),
+                ),
+                if (originalPrice.isNotEmpty)
+                  Padding(
+                    padding: EdgeInsets.only(left: ScreenAdapter.width(16)),
+                    child: Text(
+                      '¥$originalPrice',
+                      style: TextStyle(
+                        fontSize: ScreenAdapter.fontSize(28),
+                        color: Color(0xFF999999),
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
+          // 课程有效期 + 总课时(接口动态取值)
+          if (studyPeriod.isNotEmpty || totalLessons.isNotEmpty) ...[
+            SizedBox(height: ScreenAdapter.height(24)),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(
+                horizontal: ScreenAdapter.width(32),
+                vertical: ScreenAdapter.height(28),
+              ),
+              decoration: BoxDecoration(
+                color: Color(0xFFFAFAFA),
+                borderRadius: BorderRadius.circular(ScreenAdapter.width(16)),
+              ),
+              child: Column(
+                children: [
+                  if (studyPeriod.isNotEmpty) ...[
+                    _buildInfoLine('课程有效期', studyPeriod),
+                    if (totalLessons.isNotEmpty)
+                      SizedBox(height: ScreenAdapter.height(20)),
+                  ],
+                  if (totalLessons.isNotEmpty)
+                    _buildInfoLine('总课时', '$totalLessons课时'),
+                ],
+              ),
+            ),
+          ],
+
+          // 分隔横线
+          if (teacherList.isNotEmpty || description.isNotEmpty)
+            Container(
+              height: 1,
+              color: Color(0xFFEEEEEE),
+              margin: EdgeInsets.symmetric(vertical: ScreenAdapter.height(32)),
+            ),
+
+          // 教研团队(横向滚动列表:头像 + 姓名)
+          if (teacherList.isNotEmpty) ...[
+            _buildCourseSectionTitle('教研团队'),
+            SizedBox(height: ScreenAdapter.height(28)),
+            SizedBox(
+              height: ScreenAdapter.height(230),
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: teacherList.length,
+                separatorBuilder: (_, __) =>
+                    SizedBox(width: ScreenAdapter.width(48)),
+                itemBuilder: (context, index) {
+                  final teacher = teacherList[index];
+                  if (teacher is! Map) return const SizedBox.shrink();
+                  return Column(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: Color(0xFFE8E8E8), width: 1.5),
+                        ),
+                        child: CircleAvatar(
+                          radius: ScreenAdapter.width(64),
+                          backgroundImage: NetworkImage(
+                              ApiClient.replaceUri(
+                                  teacher['avatar']?.toString() ?? '')),
+                          onBackgroundImageError: (e, s) {},
+                          backgroundColor: Color(0xFFF0F0F0),
+                        ),
+                      ),
+                      SizedBox(height: ScreenAdapter.height(12)),
+                      Text(
+                        teacher['name']?.toString() ?? '',
+                        style: TextStyle(
+                          fontSize: ScreenAdapter.fontSize(28),
+                          color: Color(0xFF333333),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            if (description.isNotEmpty) SizedBox(height: ScreenAdapter.height(32)),
+          ],
+
+          // 课程说明(富文本)
+          if (description.isNotEmpty) ...[
+            _buildCourseSectionTitle('课程说明'),
+            SizedBox(height: ScreenAdapter.height(20)),
+            HtmlWidget(
+              description,
+              textStyle: TextStyle(
+                fontSize: ScreenAdapter.fontSize(30),
+                color: Color(0xFF666666),
+                height: 1.5,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 课程有效期天数换算(study_period 单位为天;0=永久;整除 365 显示"X年")
+  String _formatStudyPeriod(dynamic days) {
+    final v = int.tryParse(days?.toString() ?? '');
+    if (v == null || v <= 0) return '';
+    if (v % 365 == 0) return '${v ~/ 365}年';
+    return '$v天';
+  }
+
+  /// 区块标题(左侧蓝竖线装饰,与"课程说明"样式一致)
+  Widget _buildCourseSectionTitle(String text) {
+    return Container(
+      margin: EdgeInsets.only(bottom: ScreenAdapter.height(16)),
+      child: Row(
+        children: [
+          Container(
+            width: ScreenAdapter.width(6),
+            height: ScreenAdapter.height(40),
+            decoration: BoxDecoration(
+              color: Color(0xFF3D7CFF),
+              borderRadius: BorderRadius.circular(ScreenAdapter.width(3)),
+            ),
+          ),
+          SizedBox(width: ScreenAdapter.width(16)),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: ScreenAdapter.fontSize(44),
+              color: Color(0xFF333333),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 信息行:左侧灰色标签 + 右侧黑色值
+  Widget _buildInfoLine(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(32),
+            color: Color(0xFF999999),
+          ),
+        ),
+        Flexible(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(32),
+                color: Color(0xFF333333),
+                fontWeight: FontWeight.w500,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   /// 底部按钮：免费显示"立即订阅"，付费显示"立即购买"
   /// 已购买/已订阅时不显示底部区域
   Widget _buildBottomButton(BuildContext context) {
@@ -544,8 +784,8 @@ class DetailsView extends GetView<DetailsController> {
     }
 
     final bool isFree = detail['is_free']?.toString() == '1';
-    final String buttonText =
-        isFree || AuthService.to.isMember ? '立即订阅' : '立即购买';
+    // 课程无 VIP 免购逻辑:免费课订阅,付费课购买
+    final String buttonText = isFree ? '立即订阅' : '立即购买';
     final String disabledText = isFree ? '已订阅' : '已购买';
     final String price = isFree ? '免费' : '${detail['price']}';
     final String originalPrice = detail['original_price']?.toString() ?? '';
@@ -618,7 +858,7 @@ class DetailsView extends GetView<DetailsController> {
               onTap: isPay
                   ? null
                   : () async {
-                      if (isFree || AuthService.to.isMember) {
+                      if (isFree) {
                         final confirmed = await CommonDialog.show(
                           title: '提示',
                           content: '确定要订阅该课程吗？',
@@ -656,9 +896,8 @@ class DetailsView extends GetView<DetailsController> {
                         }
                         return;
                       }
-                      // TODO: 支付对接完成后恢复跳转下单页
-                      Get.toNamed(Routes.ORDER_CONFIRM, arguments: detail);
-                      // SnackbarUtils.showInfo('请联系客服');
+                      // 付费课程先弹出规格选择弹窗
+                      _showCourseSpecSheet(context);
                     },
               child: Transform.translate(
                 offset:
@@ -684,6 +923,450 @@ class DetailsView extends GetView<DetailsController> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 显示课程规格选择弹窗（班级种类 / 选择科目）
+  void _showCourseSpecSheet(BuildContext context) {
+    final detail = controller.courseDetail;
+    final String coverImage = detail['cover_image_url']?.toString() ??
+        detail['cover_image']?.toString() ??
+        '';
+    final String title = detail['title']?.toString() ?? '课程名称';
+    final String originalPrice = detail['original_price']?.toString() ?? '';
+
+    // ★2026-08-17 改版:班级种类/科目选项全部取接口活数据。
+    // 兼容两种返回结构:
+    //  ①新结构:class_types=[{key,name,spec_count}] + specs={班型key:[规格...]} + default_spec_id
+    //  ②当前 app 端结构:specs 为扁平数组(规格含 type/type_text),无 class_types/default_spec_id
+    //    → 班型列表由 specs 按 type 去重推导
+    final List classTypes = (detail['class_types'] as List?) ?? const [];
+    final List flatSpecs = detail['specs'] is List
+        ? (detail['specs'] as List).whereType<Map>().toList()
+        : const [];
+    final Map<String, dynamic> specsByType = detail['specs'] is Map
+        ? Map<String, dynamic>.from(detail['specs'] as Map)
+        : <String, dynamic>{};
+    // 无 class_types 时按规格 type 去重推导班型列表
+    final List effectiveClassTypes = classTypes.isNotEmpty
+        ? classTypes
+        : () {
+            final seen = <String>{};
+            final result = <Map<String, dynamic>>[];
+            for (final s in flatSpecs) {
+              final type = s['type']?.toString() ?? '';
+              if (type.isEmpty || seen.contains(type)) continue;
+              seen.add(type);
+              result.add({
+                'key': type,
+                'name': s['type_text']?.toString() ?? type,
+                'spec_count': flatSpecs
+                    .where((x) => x['type']?.toString() == type)
+                    .length,
+              });
+            }
+            return result;
+          }();
+    final int defaultSpecId =
+        int.tryParse(detail['default_spec_id']?.toString() ?? '') ?? 0;
+
+    // 预选:default_spec_id(新结构)定位科目与所属班级种类;无则默认选第一个科目
+    // ★科目选中集:单科班(course_count=1)可多选,全科班(course_count>1)单选
+    int selectedClassIndex = 0;
+    final Set<int> selectedSubjectIndexes = <int>{};
+    if (defaultSpecId > 0) {
+      for (var i = 0; i < effectiveClassTypes.length; i++) {
+        final ct = effectiveClassTypes[i];
+        final key = ct is Map ? ct['key']?.toString() : '';
+        if (key == null || key.isEmpty) continue;
+        List list = specsByType[key] is List
+            ? (specsByType[key] as List)
+            : const [];
+        if (list.isEmpty) {
+          list = flatSpecs
+              .where((s) => s['type']?.toString() == key)
+              .toList();
+        }
+        final idx = list.indexWhere((s) =>
+            s is Map &&
+            (int.tryParse(s['id']?.toString() ?? '') ?? 0) == defaultSpecId);
+        if (idx >= 0) {
+          selectedClassIndex = i;
+          selectedSubjectIndexes.add(idx);
+          break;
+        }
+      }
+    }
+    if (selectedSubjectIndexes.isEmpty) {
+      // 默认选中第一个班型的第一个科目
+      selectedSubjectIndexes.add(0);
+    }
+
+    Get.bottomSheet(
+      StatefulBuilder(
+        builder: (context, setState) {
+          // 当前班级种类(选中项)与对应的科目规格列表
+          final currentClassType = effectiveClassTypes.isNotEmpty &&
+                  selectedClassIndex < effectiveClassTypes.length
+              ? effectiveClassTypes[selectedClassIndex]
+              : null;
+          final String currentClassKey = currentClassType is Map
+              ? (currentClassType['key']?.toString() ?? '')
+              : '';
+          final List currentSpecs = specsByType[currentClassKey] is List
+              ? (specsByType[currentClassKey] as List)
+              : flatSpecs
+                  .where((s) => s['type']?.toString() == currentClassKey)
+                  .toList();
+          // 单科班(course_count==1)科目可多选;全科班(course_count>1)单选
+          final bool isSingleSubjectMulti = currentSpecs.isNotEmpty &&
+              (int.tryParse(currentSpecs.first['course_count']?.toString() ?? '') ??
+                      1) ==
+                  1;
+          // ★选中科目总价 = Σ 所选规格 price(多选自动累加,随选中联动刷新)
+          final String selectedTotalPrice = currentSpecs
+              .asMap()
+              .entries
+              .where((e) => selectedSubjectIndexes.contains(e.key))
+              .map((e) => e.value)
+              .whereType<Map>()
+              .map((s) => double.tryParse(s['price']?.toString() ?? '') ?? 0)
+              .fold(0.0, (a, b) => a + b)
+              .toStringAsFixed(2);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(ScreenAdapter.width(32)),
+                topRight: Radius.circular(ScreenAdapter.width(32)),
+              ),
+            ),
+            child: SafeArea(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: ScreenAdapter.width(44),
+                    vertical: ScreenAdapter.height(44),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 头部：封面 + 价格 + 关闭
+                      Stack(
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(
+                                    ScreenAdapter.width(16)),
+                                child: Container(
+                                  width: ScreenAdapter.width(300),
+                                  height: ScreenAdapter.width(225),
+                                  color: Color(0xFFF5F5F5),
+                                  child: coverImage.isNotEmpty
+                                      ? Image.network(
+                                          ApiClient.replaceUri(coverImage),
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              _buildDefaultCover(),
+                                        )
+                                      : _buildDefaultCover(),
+                                ),
+                              ),
+                              SizedBox(width: ScreenAdapter.width(32)),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    SizedBox(height: ScreenAdapter.height(12)),
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.baseline,
+                                      textBaseline: TextBaseline.alphabetic,
+                                      children: [
+                                        Text(
+                                          '¥$selectedTotalPrice',
+                                          style: TextStyle(
+                                            fontSize:
+                                                ScreenAdapter.fontSize(64),
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFFFF4D4F),
+                                          ),
+                                        ),
+                                        if (originalPrice.isNotEmpty) ...[
+                                          SizedBox(
+                                              width: ScreenAdapter.width(16)),
+                                          Text(
+                                            '¥$originalPrice',
+                                            style: TextStyle(
+                                              fontSize:
+                                                  ScreenAdapter.fontSize(32),
+                                              color: Color(0xFF999999),
+                                              decoration:
+                                                  TextDecoration.lineThrough,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    SizedBox(height: ScreenAdapter.height(16)),
+                                    Text(
+                                      title,
+                                      style: TextStyle(
+                                        fontSize: ScreenAdapter.fontSize(38),
+                                        fontWeight: FontWeight.w500,
+                                        color: Color(0xFF333333),
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: GestureDetector(
+                              onTap: () => Get.back(),
+                              behavior: HitTestBehavior.opaque,
+                              child: Icon(
+                                Icons.close,
+                                color: Color(0xFF999999),
+                                size: ScreenAdapter.fontSize(52),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: ScreenAdapter.height(56)),
+
+                      // 班级种类(接口 class_types / specs 推导,动态渲染,单选)
+                      if (effectiveClassTypes.isNotEmpty) ...[
+                        _buildSpecSectionTitle('班级种类', '（任选单一科目，包含多种班级）'),
+                        SizedBox(height: ScreenAdapter.height(28)),
+                        Wrap(
+                          spacing: ScreenAdapter.width(24),
+                          runSpacing: ScreenAdapter.height(24),
+                          children: effectiveClassTypes.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final ct = entry.value;
+                            final label =
+                                ct is Map ? (ct['name']?.toString() ?? '') : '';
+                            final selected = index == selectedClassIndex;
+                            return _buildSpecOption(
+                              label: label,
+                              selected: selected,
+                              onTap: () => setState(() {
+                                selectedClassIndex = index;
+                                // 切换班级种类后科目选中重置(默认选第一个)
+                                selectedSubjectIndexes
+                                  ..clear()
+                                  ..add(0);
+                              }),
+                            );
+                          }).toList(),
+                        ),
+                        SizedBox(height: ScreenAdapter.height(48)),
+                      ],
+
+                      // 选择科目(接口 specs[当前班级种类] 动态渲染;单科班可多选,全科班单选)
+                      if (currentSpecs.isNotEmpty) ...[
+                        _buildSpecSectionTitle(
+                          '选择科目',
+                          isSingleSubjectMulti ? '（可多选）' : '（单选）',
+                        ),
+                        SizedBox(height: ScreenAdapter.height(28)),
+                        Wrap(
+                          spacing: ScreenAdapter.width(24),
+                          runSpacing: ScreenAdapter.height(24),
+                          children: currentSpecs.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final spec = entry.value;
+                            final label = spec is Map
+                                ? (spec['name']?.toString() ?? '')
+                                : '';
+                            final selected =
+                                selectedSubjectIndexes.contains(index);
+                            return _buildSpecOption(
+                              label: label,
+                              selected: selected,
+                              onTap: () => setState(() {
+                                if (isSingleSubjectMulti) {
+                                  // 单科班:多选,点击切换选中/取消
+                                  if (!selectedSubjectIndexes.add(index)) {
+                                    selectedSubjectIndexes.remove(index);
+                                  }
+                                } else {
+                                  // 全科班:单选
+                                  selectedSubjectIndexes
+                                    ..clear()
+                                    ..add(index);
+                                }
+                              }),
+                            );
+                          }).toList(),
+                        ),
+                        SizedBox(height: ScreenAdapter.height(56)),
+                      ],
+
+                      // 确定按钮
+                      GestureDetector(
+                        onTap: () async {
+                          // 收集选中的科目规格(单科班可多选,全科班单选;当前班型有科目数据时必须至少选一个)
+                          final List selectedSpecs = currentSpecs
+                              .asMap()
+                              .entries
+                              .where((e) =>
+                                  selectedSubjectIndexes.contains(e.key))
+                              .map((e) => e.value)
+                              .toList();
+                          if (currentSpecs.isNotEmpty &&
+                              selectedSpecs.isEmpty) {
+                            SnackbarUtils.showError('请选择科目');
+                            return;
+                          }
+                          Get.back();
+                          // 携带所选规格信息给下单页(名称/价格/spec_id 由下单接口 createCourseOrder 使用)
+                          final args = Map<String, dynamic>.from(detail);
+                          if (selectedSpecs.isNotEmpty) {
+                            args['selected_specs'] = selectedSpecs;
+                          }
+                          // 支付结果确认:下单页成功返回 true 后重拉课程详情,刷新已购状态
+                          // ★Get.toNamed 不带泛型:带泛型(bool)时 Flutter 内部
+                          // `as Route<T?>` 会把 GetPageRoute<dynamic> cast 失败抛 TypeError,路由不跳转
+                          final payResult = await Get.toNamed(
+                            Routes.ORDER_CONFIRM,
+                            arguments: args,
+                          );
+                          if (payResult == true) {
+                            final courseId = args['id']?.toString();
+                            if (courseId != null && courseId.isNotEmpty) {
+                              controller.getCourseDetail(
+                                int.tryParse(courseId) ?? 0,
+                              );
+                            }
+                          }
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          height: ScreenAdapter.height(108),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Color(0xFFFF7A45),
+                                Color(0xFFFF4D4F),
+                              ],
+                            ),
+                            borderRadius:
+                                BorderRadius.circular(ScreenAdapter.width(64)),
+                          ),
+                          child: Text(
+                            '确定',
+                            style: TextStyle(
+                              fontSize: ScreenAdapter.fontSize(40),
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+    );
+  }
+
+  Widget _buildSpecSectionTitle(String title, [String? subtitle]) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(40),
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF333333),
+          ),
+        ),
+        if (subtitle != null && subtitle.isNotEmpty)
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: ScreenAdapter.fontSize(28),
+              color: Color(0xFF999999),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSpecOption({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: ScreenAdapter.width(28),
+          vertical: ScreenAdapter.height(20),
+        ),
+        decoration: BoxDecoration(
+          color: selected ? Color(0xFFFFF2F0) : Colors.white,
+          border: Border.all(
+            color: selected ? Color(0xFFFF4D4F) : Color(0xFFEEEEEE),
+            width: ScreenAdapter.width(2),
+          ),
+          borderRadius: BorderRadius.circular(ScreenAdapter.width(10)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(32),
+            color: selected ? Color(0xFFFF4D4F) : Color(0xFF333333),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpecTag(String text, {required bool filled}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: ScreenAdapter.width(8),
+        vertical: ScreenAdapter.height(4),
+      ),
+      decoration: BoxDecoration(
+        color: filled ? Color(0xFFFF4D4F) : Colors.transparent,
+        border: Border.all(
+          color: Color(0xFFFF4D4F),
+          width: ScreenAdapter.width(1.5),
+        ),
+        borderRadius: BorderRadius.circular(ScreenAdapter.width(4)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: ScreenAdapter.fontSize(22),
+          color: filled ? Colors.white : Color(0xFFFF4D4F),
         ),
       ),
     );
@@ -1379,7 +2062,7 @@ class DetailsView extends GetView<DetailsController> {
                 final bool isPay = detail['is_pay']?.toString() == '1' ||
                     detail['is_pay'] == true;
                 final bool isFree = detail['is_free']?.toString() == '1';
-                if (!isPay && !isFree && !AuthService.to.isMember) {
+                if (!isPay && !isFree) {
                   SnackbarUtils.showError('请先购买或订阅课程');
                   return;
                 }
@@ -1410,7 +2093,7 @@ class DetailsView extends GetView<DetailsController> {
     final bool isPay =
         detail['is_pay']?.toString() == '1' || detail['is_pay'] == true;
     final bool isFree = detail['is_free']?.toString() == '1';
-    if (!isPay && !isFree && !AuthService.to.isMember) {
+    if (!isPay && !isFree) {
       SnackbarUtils.showError('请先购买或订阅课程');
       return;
     }
@@ -1458,7 +2141,7 @@ class DetailsView extends GetView<DetailsController> {
     final bool isPay =
         detail['is_pay']?.toString() == '1' || detail['is_pay'] == true;
     final bool isFree = detail['is_free']?.toString() == '1';
-    if (!isPay && !isFree && !AuthService.to.isMember) {
+    if (!isPay && !isFree) {
       SnackbarUtils.showError('请先购买或订阅课程');
       return;
     }
@@ -1651,11 +2334,9 @@ class _PdfPreviewPageState extends State<_PdfPreviewPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title, style: TextStyle(fontSize: 18)),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        foregroundColor: Color(0xFF333333),
+      appBar: CommonAppBar(
+        title: widget.title,
+        titleStyle: const TextStyle(fontSize: 18),
         elevation: 0.5,
       ),
       body: Stack(

@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:xmshop/app/data/providers/api_client.dart';
 import '../../../data/models/category_model.dart';
+import 'package:xmshop/app/utils/app_log.dart';
 
 class ProjectController extends GetxController {
   // 选中的项
@@ -45,7 +46,7 @@ class ProjectController extends GetxController {
         errorMessage.value = '网络请求失败，请稍后重试';
       }
     } catch (e) {
-      print('Fetch categories error: $e'); // Add console log
+      AppLog.d('Fetch categories error: $e'); // Add console log
       errorMessage.value = '请求出错：$e'; // Show detail to user temporarily
     } finally {
       isLoading.value = false;

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../services/screenAdapter.dart';
+import '../../../components/common_app_bar.dart';
 import '../controllers/question_feedback_controller.dart';
 
 class QuestionFeedbackView extends GetView<QuestionFeedbackController> {
@@ -11,20 +12,7 @@ class QuestionFeedbackView extends GetView<QuestionFeedbackController> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6F8),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF333333),
-        centerTitle: true,
-        title: Text(
-          '问题反馈',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(36),
-            color: const Color(0xFF333333),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
+      appBar: const CommonAppBar(title: '问题反馈'),
       body: Column(
         children: [
           Expanded(

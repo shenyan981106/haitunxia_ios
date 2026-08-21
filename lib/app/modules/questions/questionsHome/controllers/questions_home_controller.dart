@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../../../../services/global_project_controller.dart';
 import '../../../../data/providers/api_client.dart';
 import '../../../../data/models/category_model.dart';
+import '../../../../data/services/subject_vip_service.dart';
 
 class QuestionsHomeController extends GetxController {
   // 全局项目控制器，延迟初始化
@@ -24,6 +25,9 @@ class QuestionsHomeController extends GetxController {
   // Tab滚动控制 用于水平标签滚动
   late ScrollController tabScrollController;
 
+  // ★2026-08-14 修复:ever() Worker 需手动释放,否则挂载在全局 Rx 上累积僵尸监听
+  Worker? _projectWorker;
+
   @override
   void onInit() {
     super.onInit();
@@ -38,7 +42,7 @@ class QuestionsHomeController extends GetxController {
     tabScrollController = ScrollController();
 
     // 监听全局项目变化
-    ever(globalController.currentProject, (project) {
+    _projectWorker = ever(globalController.currentProject, (project) {
       if (project != null) {
         fetchSubjects();
       }
@@ -50,6 +54,7 @@ class QuestionsHomeController extends GetxController {
 
   @override
   void onClose() {
+    _projectWorker?.dispose();
     pageController.dispose();
     tabScrollController.dispose();
     super.onClose();
@@ -61,12 +66,20 @@ class QuestionsHomeController extends GetxController {
     if (pageController.hasClients) {
       pageController.jumpToPage(index);
     }
+    // ★2026-08-14 修复:切换三级科目时重新拉取动态工具配置(getPageConfig 按三级科目区分)
+    if (index >= 0 && index < subjects.length) {
+      fetchDynamicTools(subjects[index].id);
+    }
     update();
   }
 
   void onPageChanged(int index) {
     if (selectedSubIndex.value == index) return;
     selectedSubIndex.value = index;
+    // ★2026-08-14 修复:滑动切换科目同样刷新动态工具配置
+    if (index >= 0 && index < subjects.length) {
+      fetchDynamicTools(subjects[index].id);
+    }
     update();
   }
 
@@ -330,7 +343,12 @@ class QuestionsHomeController extends GetxController {
               selectedTabIndex.value = 0;
               selectedSubIndex.value = 0;
               // 获取动态工具模块和 tabs 导航
-              fetchDynamicTools(target.id);
+              // ★2026-08-14 修复:改传三级科目 ID(subjects 即题库顶部 tab,
+              // 与 VIP 判断同源;原传 target.id 是二级科目)
+              fetchDynamicTools(subjects.first.id);
+              // 预取当前三级科目的 VIP 开通状态(押题/母题入口按科目判断用)
+              SubjectVipService.to
+                  .ensureSubjectOpened(subjects.first.id.toString());
             } else {
               errorMessage = '暂无子分类数据';
             }
@@ -362,8 +380,12 @@ class QuestionsHomeController extends GetxController {
     }
   }
 
+  // 最近一次 getPageConfig 请求的科目 ID(快速切换 tab 时丢弃过期响应,防旧配置覆盖)
+  int _pageConfigRequestedSubjectId = -1;
+
   // 获取动态页面配置（addons/exam/question/getPageConfig）
   Future<void> fetchDynamicTools(int subjectId) async {
+    _pageConfigRequestedSubjectId = subjectId;
     try {
       final response = await ApiClient.to.getExam(
         'paper/getPageConfig',
@@ -373,6 +395,9 @@ class QuestionsHomeController extends GetxController {
       if (response.statusCode == 200) {
         final data = response.data;
         debugPrint('getPageConfig API返回: $data');
+
+        // ★2026-08-14 修复:仅接受"最新一次请求"的响应(先发的可能后返回)
+        if (_pageConfigRequestedSubjectId != subjectId) return;
 
         if (data['code'] == 1) {
           final dataMap = data['data'];

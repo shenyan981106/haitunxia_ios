@@ -60,6 +60,9 @@ class TabsController extends GetxController with WidgetsBindingObserver {
 
   // ==================== 生命周期 ====================
 
+  // ★2026-08-14 修复:ever() Worker 需手动释放(与其余模块保持一致)
+  Worker? _projectWorker;
+
   @override
   void onInit() {
     super.onInit();
@@ -68,7 +71,7 @@ class TabsController extends GetxController with WidgetsBindingObserver {
     _globalProjectController = Get.find<GlobalProjectController>();
 
     // 监听全局项目变化，自动加载对应科目
-    ever(_globalProjectController.currentProject, (_) {
+    _projectWorker = ever(_globalProjectController.currentProject, (_) {
       loadSubjects();
     });
 
@@ -78,6 +81,7 @@ class TabsController extends GetxController with WidgetsBindingObserver {
 
   @override
   void onClose() {
+    _projectWorker?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     pageController.dispose();
     super.onClose();

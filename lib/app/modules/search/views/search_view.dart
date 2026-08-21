@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../../../components/common_back_button.dart';
+import '../../../components/common_empty_state.dart';
+import '../../../components/common_error_state.dart';
 import '../controllers/question_search_controller.dart';
 
 class SearchView extends StatefulWidget {
@@ -54,14 +57,7 @@ class _SearchViewState extends State<SearchView> {
       ),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Get.back(),
-            child: Icon(
-              Icons.arrow_back_ios,
-              size: 44.sp,
-              color: const Color(0xFF333333),
-            ),
-          ),
+          const CommonBackButton(),
           SizedBox(width: 20.w),
           Expanded(
             child: Container(
@@ -173,70 +169,21 @@ class _SearchViewState extends State<SearchView> {
   }
 
   Widget _buildError(String message) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.error_outline,
-            size: 160.sp,
-            color: const Color(0xFFFF6B6B),
-          ),
-          SizedBox(height: 32.h),
-          Text(
-            message,
-            style: TextStyle(
-              fontSize: 36.sp,
-              color: const Color(0xFF666666),
-            ),
-          ),
-          SizedBox(height: 32.h),
-          GestureDetector(
-            onTap: controller.search,
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: 48.w,
-                vertical: 20.h,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xFF3D7CFF),
-                borderRadius: BorderRadius.circular(40.w),
-              ),
-              child: Text(
-                '重试',
-                style: TextStyle(
-                  fontSize: 36.sp,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+    return CommonErrorState(
+      message: message,
+      onRetry: controller.search,
+      buttonText: '重试',
+      buttonColor: const Color(0xFF3D7CFF),
+      iconColor: const Color(0xFFFF6B6B),
     );
   }
 
   Widget _buildEmpty() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.search_off,
-            size: 160.sp,
-            color: const Color(0xFFE0E0E0),
-          ),
-          SizedBox(height: 32.h),
-          Text(
-            '没有找到相关题目',
-            style: TextStyle(
-              fontSize: 36.sp,
-              color: const Color(0xFF999999),
-            ),
-          ),
-        ],
-      ),
+    return CommonEmptyState(
+      icon: Icons.search_off,
+      title: '没有找到相关题目',
+      titleFontSize: 36.sp,
+      iconColor: const Color(0xFFE0E0E0),
     );
   }
 

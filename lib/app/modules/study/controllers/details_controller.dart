@@ -7,7 +7,7 @@ import '../services/study_video_adapter.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../services/snackbar_utils.dart';
-import '../../../routes/app_pages.dart';
+import 'package:xmshop/app/utils/app_log.dart';
 
 class DetailsController extends GetxController {
   final currentTabIndex = 0.obs;
@@ -162,19 +162,28 @@ class DetailsController extends GetxController {
       if (response.data != null && response.data['code'] == 1) {
         final data = response.data['data'];
         if (data is Map<String, dynamic>) {
-          courseDetail.value = data;
+          // ★新接口结构:课程信息在 data.course 下,class_types/specs/default_spec_id 在 data 根。
+          // 把 course 字段合并进根 Map,兼容旧代码从根读取 title/price/cover_image_url/is_pay 等。
+          if (data['course'] is Map) {
+            courseDetail.value = {
+              ...data,
+              ...Map<String, dynamic>.from(data['course'] as Map),
+            };
+          } else {
+            courseDetail.value = data;
+          }
 
           if (data['items'] is List) {
             courseItems.value = data['items'];
           }
 
-          print("Success: Course details loaded - ${courseDetail['title']}");
+          AppLog.d("Success: Course details loaded - ${courseDetail['title']}");
         }
       } else {
         SnackbarUtils.showError(response.data['msg'] ?? "获取详情失败");
       }
     } catch (e) {
-      print("Error: Failed to load course details - $e");
+      AppLog.d("Error: Failed to load course details - $e");
       if (e is dio.DioException) {
         SnackbarUtils.showError("服务器错误 ${e.response?.statusCode}");
       } else {
@@ -196,7 +205,8 @@ class DetailsController extends GetxController {
     final bool isPay = courseDetail['is_pay']?.toString() == '1' ||
         courseDetail['is_pay'] == true;
     final bool isFree = courseDetail['is_free']?.toString() == '1';
-    if (!isPay && !isFree && !AuthService.to.isMember) {
+    // 课程无 VIP 免购逻辑:未购未订即拦截
+    if (!isPay && !isFree) {
       SnackbarUtils.showError('请先购买或订阅课程');
       return;
     }
@@ -358,9 +368,9 @@ class DetailsController extends GetxController {
         },
       );
 
-      print("Progress saved: lesson=$_currentLessonId, pos=$position");
+      AppLog.d("Progress saved: lesson=$_currentLessonId, pos=$position");
     } catch (e) {
-      print("Error: Failed to save progress - $e");
+      AppLog.d("Error: Failed to save progress - $e");
     }
   }
 

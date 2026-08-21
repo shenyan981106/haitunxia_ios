@@ -9,8 +9,13 @@ import 'package:tobias/tobias.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../services/screenAdapter.dart';
 import '../../../data/providers/api_client.dart';
+import '../../../data/models/address_model.dart';
+import '../../../data/repositories/exam_repository.dart';
 import '../../../services/snackbar_utils.dart';
 import '../../../utils/api_error_handler.dart';
+import '../../../components/app_tag.dart';
+import '../../../components/common_app_bar.dart';
+import '../../../routes/app_pages.dart';
 
 class OrderConfirmView extends StatefulWidget {
   final Map<String, dynamic> courseData;
@@ -22,14 +27,22 @@ class OrderConfirmView extends StatefulWidget {
   State<OrderConfirmView> createState() => _OrderConfirmViewState();
 }
 
-class _OrderConfirmViewState extends State<OrderConfirmView> {
+class _OrderConfirmViewState extends State<OrderConfirmView>
+    with WidgetsBindingObserver {
   String selectedPayment = '';
-  final nameController = TextEditingController();
-  final phoneController = TextEditingController();
-  final addressController = TextEditingController();
   final List<Map<String, dynamic>> _payMethods = [];
   bool _isLoadingPayMethods = true;
   bool _isPaying = false;
+
+  /// 已选收货地址(必填,未选时提交被拦截并跳转选择页)
+  AddressModel? _selectedAddress;
+
+  /// 已有订单模式:按 spec_ids 拉课程详情解析出的规格名(如「系统班 + 精讲班」,加载失败为空)
+  String _existingSpecNames = '';
+
+  /// 已有订单模式(我的订单-待支付「去结算」进入):直接支付已有订单,
+  /// 跳过 createCourseOrder 下单与收货地址选择(地址已随订单存储)
+  bool get _isExistingOrder => widget.courseData['existing_order'] == true;
 
   final Fluwx _fluwx = Fluwx();
   FluwxCancelable? _wechatPaySubscription;
@@ -37,16 +50,108 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _fetchPayMethods();
+    if (_isExistingOrder) {
+      // 优先用列表接口透传的 spec_names(逗号分隔);为空(旧数据/未传)时拉课程详情兜底
+      final specNames = widget.courseData['spec_names']?.toString().trim() ?? '';
+      if (specNames.isNotEmpty) {
+        _existingSpecNames = specNames.split(',').map((e) => e.trim()).join(' + ');
+      } else {
+        _loadOrderSpecs();
+      }
+    } else {
+      _loadDefaultAddress();
+    }
+  }
+
+  /// 兜底逻辑:courseData['spec_names'] 为空时,按 class_id 拉课程详情,
+  /// 用 spec_ids 匹配出规格名(仅展示,失败静默)
+  Future<void> _loadOrderSpecs() async {
+    final classId = widget.courseData['class_id']?.toString() ?? '';
+    final specIdsStr = widget.courseData['spec_ids']?.toString() ?? '';
+    if (classId.isEmpty || specIdsStr.isEmpty) return;
+    try {
+      final response = await ApiClient.to.get(
+        'addons/exam/coures/detail',
+        queryParameters: {'id': classId},
+      );
+      final body = response.data;
+      List? specs;
+      if (body is Map) {
+        final data = body['data'];
+        // 新旧结构兼容:specs 均在 data 根(新结构 data.course 下无 specs)
+        if (data is Map) {
+          specs = data['specs'] is List ? data['specs'] : null;
+        }
+      }
+      if (specs is List) {
+        final ids = specIdsStr
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+        final names = specs
+            .whereType<Map>()
+            .where((s) => ids.contains(s['id']?.toString()))
+            .map((s) => s['name']?.toString() ?? '')
+            .where((n) => n.isNotEmpty)
+            .toList();
+        if (names.isNotEmpty && mounted) {
+          setState(() => _existingSpecNames = names.join(' + '));
+        }
+      }
+    } catch (e) {
+      // 静默:规格名拉取失败不影响支付
+    }
+  }
+
+  /// 进入页面时自动选中默认收货地址(失败静默,不阻塞下单)
+  Future<void> _loadDefaultAddress() async {
+    try {
+      final response = await ExamRepository.to.getAddressList();
+      if (response.isSuccess) {
+        final list = response.data ?? [];
+        final defaultItems = list.where((e) => e.isDefaultAddress).toList();
+        if (defaultItems.isNotEmpty && mounted) {
+          setState(() => _selectedAddress = defaultItems.first);
+        }
+      }
+    } catch (e) {
+      // 静默:地址加载失败不阻塞下单页,用户可手动点击选择
+    }
+  }
+
+  /// 跳转地址列表选择页,选中后回填
+  Future<void> _pickAddress() async {
+    final result = await Get.toNamed(
+      Routes.ADDRESS_LIST,
+      arguments: {'selectMode': true},
+    );
+    if (result is AddressModel && mounted) {
+      setState(() => _selectedAddress = result);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _wechatPaySubscription?.cancel();
-    nameController.dispose();
-    phoneController.dispose();
-    addressController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 支付结果确认兜底:微信/支付宝回调丢失或 H5 支付时,从外部返回后
+    // 静默返回 true,由课程详情页重拉详情确认支付结果(未支付时详情不变)
+    if (state == AppLifecycleState.resumed && _isPaying) {
+      _isPaying = false;
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          Get.back(result: true);
+        }
+      });
+    }
   }
 
   Future<void> _fetchPayMethods() async {
@@ -107,21 +212,12 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFFF5F5F5),
-      appBar: AppBar(
-        title: Text(
-          '确认下单',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(50),
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF333333),
-          ),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: Colors.black),
-          onPressed: () => Get.back(),
+      appBar: CommonAppBar(
+        title: '确认下单',
+        titleStyle: TextStyle(
+          fontSize: ScreenAdapter.fontSize(50),
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF333333),
         ),
       ),
       body: Column(
@@ -139,9 +235,11 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
                   _buildCourseInfoCard(),
                   SizedBox(height: ScreenAdapter.height(24)),
 
-                  // 收货信息卡片
-                  _buildShippingInfoCard(),
-                  SizedBox(height: ScreenAdapter.height(24)),
+                  // 收货地址卡片(必选;★已有订单模式隐藏,地址已随订单存储)
+                  if (!_isExistingOrder) ...[
+                    _buildAddressCard(),
+                    SizedBox(height: ScreenAdapter.height(24)),
+                  ],
 
                   // 支付方式卡片
                   _buildPaymentCard(),
@@ -161,12 +259,26 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
   Widget _buildCourseInfoCard() {
     final data = widget.courseData;
     final title = data['title']?.toString() ?? '未知课程';
-    final price = data['price']?.toString() ?? '0';
     final originalPrice = data['original_price']?.toString() ?? '';
     final image = data['cover_image_url']?.toString() ??
         data['cover_image']?.toString() ??
         data['image']?.toString() ??
         '';
+
+    // ★2026-08-17 规格下单:selected_specs 存在时展示所选规格名称,金额 = Σ 规格价格
+    final List selectedSpecs =
+        (data['selected_specs'] as List?)?.whereType<Map>().toList() ??
+            const [];
+    final bool hasSpecs = selectedSpecs.isNotEmpty;
+    final String price = hasSpecs
+        ? selectedSpecs
+            .map((s) => double.tryParse(s['price']?.toString() ?? '') ?? 0)
+            .fold(0.0, (a, b) => a + b)
+            .toStringAsFixed(2)
+        : (data['price']?.toString() ?? '0');
+    final String specNames = hasSpecs
+        ? selectedSpecs.map((s) => s['name']?.toString() ?? '').join(' + ')
+        : '';
 
     return Container(
       decoration: BoxDecoration(
@@ -205,6 +317,30 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
+
+          // 所选班型规格名称
+          if (hasSpecs) ...[
+            SizedBox(height: ScreenAdapter.height(12)),
+            Text(
+              '班型：$specNames',
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(32),
+                color: Color(0xFF666666),
+              ),
+            ),
+          ],
+
+          // 已有订单模式:规格名按 spec_ids 拉课程详情得出(仅展示,拉取失败/无规格则隐藏)
+          if (!hasSpecs && _isExistingOrder && _existingSpecNames.isNotEmpty) ...[
+            SizedBox(height: ScreenAdapter.height(12)),
+            Text(
+              '班型：$_existingSpecNames',
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(32),
+                color: Color(0xFF666666),
+              ),
+            ),
+          ],
           SizedBox(height: ScreenAdapter.height(20)),
 
           // 价格
@@ -218,7 +354,9 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
                   color: Color(0xFFFF4D4F),
                 ),
               ),
-              if (originalPrice.isNotEmpty && originalPrice != price) ...[
+              if (!hasSpecs &&
+                  originalPrice.isNotEmpty &&
+                  originalPrice != price) ...[
                 SizedBox(width: ScreenAdapter.width(12)),
                 Text(
                   '\u00A5$originalPrice',
@@ -246,8 +384,9 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
     );
   }
 
-  /// 收货信息卡片（收货人 + 手机号）
-  Widget _buildShippingInfoCard() {
+  /// 收货地址选择卡片(点击进入地址列表选择页)
+  Widget _buildAddressCard() {
+    final addr = _selectedAddress;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -258,84 +397,85 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '收货信息',
+            '收货地址',
             style: TextStyle(
               fontSize: ScreenAdapter.fontSize(38),
               fontWeight: FontWeight.w500,
               color: Color(0xFF333333),
             ),
           ),
-          SizedBox(height: ScreenAdapter.height(40)),
-
-          // 收货人输入
-          _buildInputField('收货人', nameController, hint: '请输入收货人姓名'),
-          SizedBox(height: ScreenAdapter.height(48)),
-
-          // 手机号码输入
-          _buildInputField('手机号码', phoneController,
-              keyboardType: TextInputType.phone, hint: '请输入手机号码'),
-          SizedBox(height: ScreenAdapter.height(48)),
-
-          // 收货地址输入
-          _buildInputField('收货地址', addressController, hint: '请输入收货地址'),
+          SizedBox(height: ScreenAdapter.height(36)),
+          GestureDetector(
+            onTap: _pickAddress,
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.location_on_outlined,
+                  color: Color(0xFF3D7CFF),
+                  size: ScreenAdapter.fontSize(44),
+                ),
+                SizedBox(width: ScreenAdapter.width(20)),
+                Expanded(
+                  child: addr == null
+                      ? Text(
+                          '请选择收货地址',
+                          style: TextStyle(
+                            fontSize: ScreenAdapter.fontSize(34),
+                            color: Color(0xFF999999),
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  addr.consignee,
+                                  style: TextStyle(
+                                    fontSize: ScreenAdapter.fontSize(36),
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF333333),
+                                  ),
+                                ),
+                                SizedBox(width: ScreenAdapter.width(20)),
+                                Text(
+                                  addr.phone,
+                                  style: TextStyle(
+                                    fontSize: ScreenAdapter.fontSize(32),
+                                    color: Color(0xFF666666),
+                                  ),
+                                ),
+                                if (addr.isDefaultAddress) ...[
+                                  SizedBox(width: ScreenAdapter.width(16)),
+                                  const AppTag('默认'),
+                                ],
+                              ],
+                            ),
+                            SizedBox(height: ScreenAdapter.height(12)),
+                            Text(
+                              addr.fullAddress,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: ScreenAdapter.fontSize(30),
+                                color: Color(0xFF666666),
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: Color(0xFF999999),
+                  size: ScreenAdapter.fontSize(44),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
-    );
-  }
-
-  /// 输入框组件
-  Widget _buildInputField(String label, TextEditingController controller,
-      {TextInputType keyboardType = TextInputType.text, required String hint}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        SizedBox(
-          width: ScreenAdapter.width(160),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(36),
-              color: Color(0xFF333333),
-            ),
-          ),
-        ),
-        Expanded(
-          child: TextField(
-            controller: controller,
-            keyboardType: keyboardType,
-            style: TextStyle(
-              fontSize: ScreenAdapter.fontSize(34),
-              color: Color(0xFF333333),
-            ),
-            inputFormatters: label == '手机号码'
-                ? [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(11)
-                  ]
-                : null,
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: hint,
-              hintStyle: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(32),
-                  color: Color(0xFFCCCCCC)),
-              contentPadding: EdgeInsets.symmetric(
-                horizontal: ScreenAdapter.width(16),
-                vertical: ScreenAdapter.height(12),
-              ),
-              border: UnderlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFFF5F5F5), width: 1),
-              ),
-              enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFFF5F5F5), width: 1),
-              ),
-              focusedBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFF3D7CFF), width: 1.5),
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -512,7 +652,9 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
                   ),
                 )
               : Text(
-                  '确认购买 \u00A5$price',
+                  _isExistingOrder
+                      ? '确认支付 \u00A5$price'
+                      : '确认购买 \u00A5$price',
                   style: TextStyle(
                     fontSize: ScreenAdapter.fontSize(38),
                     fontWeight: FontWeight.w500,
@@ -524,40 +666,53 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
   }
 
   void _handleSubmit() {
-    final name = nameController.text.trim();
-    final phone = phoneController.text.trim();
-    final address = addressController.text.trim();
-
-    if (name.isEmpty) {
-      SnackbarUtils.showError('请输入收货人姓名');
-      return;
-    }
-    if (phone.isEmpty) {
-      SnackbarUtils.showError('请输入手机号码');
-      return;
-    }
-    if (phone.length != 11) {
-      SnackbarUtils.showError('请输入正确的11位手机号码');
-      return;
-    }
-    if (address.isEmpty) {
-      SnackbarUtils.showError('请输入收货地址');
-      return;
-    }
     if (selectedPayment.isEmpty) {
       SnackbarUtils.showError('请选择支付方式');
       return;
     }
 
-    _submitPay(name, phone, address);
+    // ★已有订单模式:收货地址已随订单存储,无需再次选择
+    if (!_isExistingOrder) {
+      // ★2026-08-18 收货地址必填:未选择时提示并跳转地址选择页
+      if (_selectedAddress == null) {
+        SnackbarUtils.showWarning('请选择收货地址');
+        _pickAddress();
+        return;
+      }
+    }
+
+    _submitPay();
   }
 
-  Future<void> _submitPay(String name, String phone, String address) async {
+  Future<void> _submitPay() async {
     if (_isPaying) return;
 
+    // ★已有订单模式:直接用订单号支付,跳过 createCourseOrder 下单
+    final String? existingOrderSn = _isExistingOrder
+        ? (widget.courseData['order_no']?.toString() ?? '')
+        : null;
+    if (_isExistingOrder &&
+        (existingOrderSn == null || existingOrderSn.isEmpty)) {
+      SnackbarUtils.showError('订单信息异常');
+      return;
+    }
+
     final courseId = widget.courseData['id']?.toString();
-    if (courseId == null || courseId.isEmpty) {
+    if (!_isExistingOrder && (courseId == null || courseId.isEmpty)) {
       SnackbarUtils.showError('课程信息异常');
+      return;
+    }
+
+    // ★2026-08-17 规格下单:spec_ids 取所选班型规格(createCourseOrder 必传)
+    final List selectedSpecs =
+        (widget.courseData['selected_specs'] as List?)?.whereType<Map>().toList() ??
+            const [];
+    final specIds = selectedSpecs
+        .map((s) => s['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toList();
+    if (!_isExistingOrder && specIds.isEmpty) {
+      SnackbarUtils.showError('请选择班型科目');
       return;
     }
 
@@ -568,19 +723,47 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
     try {
       SnackbarUtils.showInfo('正在发起支付...');
 
+      // 1. 取订单号:已有订单直接用 order_no;否则 createCourseOrder 下单
+      String orderSn;
+      if (_isExistingOrder) {
+        orderSn = existingOrderSn!;
+      } else {
+        // ★后端文档(2026-08-18):spec_ids 为逗号分隔字符串(非数组,无需 listFormat),
+        //   address_id 为顶层参数(收货地址 id,必选)
+        final orderResponse = await ApiClient.to.post(
+          'addons/exam/pay/createCourseOrder',
+          data: {
+            'course_id': courseId,
+            'spec_ids': specIds.join(','),
+            'address_id': _selectedAddress!.id,
+          },
+          options: Options(contentType: Headers.formUrlEncodedContentType),
+        );
+
+        orderSn = _extractOrderSn(orderResponse.data) ?? '';
+        if (orderSn.isEmpty) {
+          if (mounted) {
+            setState(() {
+              _isPaying = false;
+            });
+          }
+          final msg = orderResponse.data is Map
+              ? (orderResponse.data['msg']?.toString() ?? '')
+              : '';
+          SnackbarUtils.showError(msg.isNotEmpty ? msg : '创建订单失败');
+          return;
+        }
+      }
+
+      // 2. 支付
       final response = await ApiClient.to.post(
-        'addons/exam/pay/pay',
+        'addons/exam/pay/coursePay',
         data: {
-          'order_type': 'course',
-          'order_id': courseId,
+          'order_sn': orderSn,
           'pay_type': selectedPayment,
           'method': 'app',
-          'extra_params': {
-            'name': name,
-            'phone': phone,
-            'address': address,
-          },
         },
+        options: Options(contentType: Headers.formUrlEncodedContentType),
       );
 
       if (response.data != null) {
@@ -592,6 +775,13 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
         } else if (type == 'wechat') {
           await _doWechatPay(body);
         }
+      } else {
+        if (mounted) {
+          setState(() {
+            _isPaying = false;
+          });
+        }
+        SnackbarUtils.showError('获取支付参数失败');
       }
     } on DioException catch (e) {
       if (mounted) {
@@ -608,6 +798,24 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
       }
       ApiErrorHandler.handleError(e, fallbackMessage: '支付失败');
     }
+  }
+
+  /// 提取下单接口返回的订单号(兼容 data.order_sn / 顶层 order_sn / 纯字符串)
+  String? _extractOrderSn(dynamic body) {
+    if (body is Map) {
+      final data = body['data'];
+      if (data is Map) {
+        return data['order_sn']?.toString() ?? data['orderSn']?.toString();
+      }
+      if (data is String && data.isNotEmpty) {
+        return data;
+      }
+      return body['order_sn']?.toString() ?? body['orderSn']?.toString();
+    }
+    if (body is String && body.isNotEmpty) {
+      return body;
+    }
+    return null;
   }
 
   /// 支付宝支付
@@ -653,11 +861,7 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
         SnackbarUtils.showError('调起支付宝失败：${e.toString()}');
       }
     } else {
-      if (mounted) {
-        setState(() {
-          _isPaying = false;
-        });
-      }
+      // H5 支付:保持 _isPaying=true,返回 App 时由 didChangeAppLifecycleState 兜底确认
       final payUrl = body is Map
           ? body['payUrl']?.toString() ?? body['url']?.toString()
           : null;
@@ -666,9 +870,19 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else {
+          if (mounted) {
+            setState(() {
+              _isPaying = false;
+            });
+          }
           SnackbarUtils.showError('无法打开支付页面');
         }
       } else {
+        if (mounted) {
+          setState(() {
+            _isPaying = false;
+          });
+        }
         SnackbarUtils.showError('获取支付参数失败');
       }
     }
@@ -686,11 +900,7 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
     if (wechatParams != null) {
       await _doWechatAppPay(wechatParams);
     } else {
-      if (mounted) {
-        setState(() {
-          _isPaying = false;
-        });
-      }
+      // H5 支付:保持 _isPaying=true,返回 App 时由 didChangeAppLifecycleState 兜底确认
       final payUrl = body is String
           ? body
           : (body is Map
@@ -702,9 +912,19 @@ class _OrderConfirmViewState extends State<OrderConfirmView> {
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else {
+          if (mounted) {
+            setState(() {
+              _isPaying = false;
+            });
+          }
           SnackbarUtils.showError('无法打开支付页面');
         }
       } else {
+        if (mounted) {
+          setState(() {
+            _isPaying = false;
+          });
+        }
         SnackbarUtils.showError('获取微信支付参数失败');
       }
     }

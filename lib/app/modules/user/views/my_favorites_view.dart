@@ -3,6 +3,8 @@ import 'package:get/get.dart';
 import '../../../services/screenAdapter.dart';
 import '../../../components/common_error_state.dart';
 import '../../../components/common_empty_state.dart';
+import '../../../components/common_app_bar.dart';
+import '../../../components/filter_dropdown_button.dart';
 import '../controllers/my_favorites_controller.dart';
 
 class MyFavoritesView extends GetView<MyFavoritesController> {
@@ -12,52 +14,19 @@ class MyFavoritesView extends GetView<MyFavoritesController> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: CommonAppBar(
+        title: '我的收藏',
+        toolbarHeight: ScreenAdapter.height(112),
+        actions: [SizedBox(width: ScreenAdapter.width(96))],
+        bottomBorderColor: const Color(0xFFEEEEEE),
+      ),
       body: SafeArea(
         child: Column(
           children: [
-            _buildAppBar(context),
             _buildFilterBar(context),
             Expanded(child: _buildBody()),
           ],
         ),
-      ),
-    );
-  }
-
-  /// 构建顶部导航栏
-  Widget _buildAppBar(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: ScreenAdapter.width(36)),
-      height: ScreenAdapter.height(112),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: const Color(0xFFEEEEEE), width: 1),
-        ),
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Icon(
-              Icons.arrow_back_ios,
-              size: ScreenAdapter.fontSize(44),
-              color: const Color(0xFF333333),
-            ),
-          ),
-          Expanded(
-            child: Center(
-              child: Text(
-                '我的收藏',
-                style: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(48),
-                  color: const Color(0xFF333333),
-                ),
-              ),
-            ),
-          ),
-          SizedBox(width: ScreenAdapter.width(44)),
-        ],
       ),
     );
   }
@@ -74,51 +43,15 @@ class MyFavoritesView extends GetView<MyFavoritesController> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Obx(() => _buildFilterButton(
+          Obx(() => FilterDropdownButton(
                 label: controller.currentSortTime.value,
                 onTap: () => _showTimeFilterPicker(context),
               )),
-          Obx(() => _buildFilterButton(
+          Obx(() => FilterDropdownButton(
                 label: controller.currentSortOrder.value,
                 onTap: () => _showOrderPicker(context),
               )),
         ],
-      ),
-    );
-  }
-
-  /// 圆角筛选按钮
-  Widget _buildFilterButton({
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: ScreenAdapter.width(340),
-        height: ScreenAdapter.height(80),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F6F8),
-          borderRadius: BorderRadius.circular(ScreenAdapter.radius(40)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: ScreenAdapter.fontSize(34),
-                color: const Color(0xFFB1B8CA),
-              ),
-            ),
-            SizedBox(width: ScreenAdapter.width(6)),
-            Icon(
-              Icons.keyboard_arrow_down,
-              size: ScreenAdapter.fontSize(32),
-              color: const Color(0xFFB1B8CA),
-            ),
-          ],
-        ),
       ),
     );
   }

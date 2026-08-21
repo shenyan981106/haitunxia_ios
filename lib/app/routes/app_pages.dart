@@ -13,12 +13,14 @@ import '../modules/user/views/platform_qualification_view.dart';
 import '../modules/user/views/privacy_policy_view.dart';
 import '../modules/user/views/my_courses_view.dart';
 import '../modules/user/views/my_orders_view.dart';
+import '../modules/user/views/member_rights_view.dart';
 import '../modules/user/views/order_detail_view.dart';
 import '../modules/user/views/my_favorites_view.dart';
 import '../modules/user/views/feedback_records_view.dart';
 import '../modules/user/views/feedback_record_detail_view.dart';
 import '../modules/user/bindings/my_courses_binding.dart';
 import '../modules/user/bindings/my_orders_binding.dart';
+import '../modules/user/bindings/member_rights_binding.dart';
 import '../modules/user/bindings/order_detail_binding.dart';
 import '../modules/user/bindings/my_favorites_binding.dart';
 import '../modules/user/views/modify_nickname_view.dart';
@@ -28,6 +30,10 @@ import '../modules/user/bindings/modify_nickname_binding.dart';
 import '../modules/user/bindings/delete_account_binding.dart';
 import '../modules/user/bindings/vip_center_binding.dart';
 import '../modules/user/bindings/question_feedback_binding.dart';
+import '../modules/address/bindings/address_list_binding.dart';
+import '../modules/address/bindings/address_edit_binding.dart';
+import '../modules/address/views/address_list_view.dart';
+import '../modules/address/views/address_edit_view.dart';
 
 // 其他导入保持不变
 import '../modules/project/bindings/project_binding.dart';
@@ -50,8 +56,10 @@ import '../modules/questions/questionsWrong/bindings/questions_wrong_binding.dar
 import '../modules/questions/questionsWrong/views/questions_wrong_view.dart';
 import '../modules/study/bindings/study_binding.dart';
 import '../modules/study/bindings/details_binding.dart';
+import '../modules/study/bindings/my_course_detail_binding.dart';
 import '../modules/study/views/study_view.dart';
 import '../modules/study/views/details_view.dart';
+import '../modules/study/views/my_course_detail_view.dart';
 import '../modules/study/views/order_confirm_view.dart';
 import '../modules/study/bindings/video_player_binding.dart';
 import '../modules/study/views/video_player_view.dart';
@@ -137,6 +145,11 @@ class AppPages {
       binding: DetailsBinding(),
     ),
     GetPage(
+      name: _Paths.STUDY + '/my-course-detail',
+      page: () => MyCourseDetailView(),
+      binding: MyCourseDetailBinding(),
+    ),
+    GetPage(
       name: _Paths.STUDY + '/order-confirm',
       page: () {
         final args = Get.arguments;
@@ -167,7 +180,10 @@ class AppPages {
     GetPage(
       name: Routes.VERIFICATION,
       page: () => VerificationView(),
-      binding: LoginBinding(),
+      // ★2026-08-14 修复:与 LOGIN 共用 LoginController,无需重复挂 binding
+      // (重复 binding 会把 controller 归属记到两个路由,pop 时销毁时机错乱)。
+      // 实例由登录页路由的 LoginBinding 提供,本页 GetView 直接 Get.find 复用。
+      // binding: LoginBinding(),
     ),
     GetPage(
       name: _Paths.FEEDBACK,
@@ -242,6 +258,21 @@ class AppPages {
       name: _Paths.QUESTION_FEEDBACK,
       page: () => const QuestionFeedbackView(),
       binding: QuestionFeedbackBinding(),
+    ),
+    GetPage(
+      name: _Paths.ADDRESS_LIST,
+      page: () => const AddressListView(),
+      binding: AddressListBinding(),
+    ),
+    GetPage(
+      name: _Paths.ADDRESS_EDIT,
+      page: () => const AddressEditView(),
+      binding: AddressEditBinding(),
+    ),
+    GetPage(
+      name: _Paths.MEMBER_RIGHTS,
+      page: () => const MemberRightsView(),
+      binding: MemberRightsBinding(),
     ),
   ];
 }

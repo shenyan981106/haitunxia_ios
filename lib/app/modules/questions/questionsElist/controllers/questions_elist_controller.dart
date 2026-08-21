@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../../../../services/global_project_controller.dart';
 import '../../../../data/providers/api_client.dart';
 import '../../../../data/models/category_model.dart';
+import '../../questionsHome/controllers/questions_home_controller.dart';
 
 class QuestionsElistController extends GetxController {
   // 全局项目控制器
@@ -19,6 +20,10 @@ class QuestionsElistController extends GetxController {
 
   // 考试倒计时天数
   final daysToExam = 0.obs;
+
+  // ★2026-08-14 修复:ever() Worker 需手动释放,否则挂载在全局 Rx 上累积僵尸监听
+  Worker? _projectWorker;
+  Worker? _daysWorker;
 
   // 当前选中tab 索引
   final selectedTabIndex = 0.obs;
@@ -44,6 +49,9 @@ class QuestionsElistController extends GetxController {
   late ScrollController scrollController;
   static const int _pageSize = 15;
 
+  // 进入页面时待选中的三级科目 id(来自路由参数或题库首页当前选中科目)
+  int? _pendingSubjectId;
+
   // 暴露给 view 的分页状态
   bool get isLoadingMore => _isLoadingMore.value;
   bool get hasMore => _hasMore;
@@ -57,6 +65,7 @@ class QuestionsElistController extends GetxController {
 
     // 接收路由参数
     final args = Get.arguments as Map<String, dynamic>?;
+    dynamic subjectIdArg;
     if (args != null) {
       final typeId = args['type_id'];
       if (typeId != null) {
@@ -64,7 +73,16 @@ class QuestionsElistController extends GetxController {
             typeId is int ? typeId : int.tryParse(typeId.toString()) ?? 1;
         pageTitle.value = pageType.value == 2 ? '模拟考试' : '历年真题';
       }
+      subjectIdArg = args['subject_id'];
     }
+
+    // 优先使用路由参数的三级科目 id,缺失时沿用题库首页当前选中的三级科目
+    if (subjectIdArg == null && Get.isRegistered<QuestionsHomeController>()) {
+      subjectIdArg =
+          Get.find<QuestionsHomeController>().getCurrentSubject()?.id;
+    }
+    _pendingSubjectId =
+        subjectIdArg == null ? null : int.tryParse(subjectIdArg.toString());
 
     pageController = PageController(initialPage: selectedSubIndex.value);
     scrollController = ScrollController();
@@ -78,7 +96,7 @@ class QuestionsElistController extends GetxController {
     daysToExam.value = globalController.daysToExam.value;
 
     // 监听全局项目变化
-    ever(globalController.currentProject, (project) {
+    _projectWorker = ever(globalController.currentProject, (project) {
       if (project != null) {
         currentProjectName.value = project.name ?? '';
         fetchSubjects().then((_) => loadExamPapers());
@@ -86,7 +104,7 @@ class QuestionsElistController extends GetxController {
     });
 
     // 监听考试天数
-    ever(globalController.daysToExam, (days) {
+    _daysWorker = ever(globalController.daysToExam, (days) {
       daysToExam.value = days;
     });
 
@@ -96,6 +114,8 @@ class QuestionsElistController extends GetxController {
 
   @override
   void onClose() {
+    _projectWorker?.dispose();
+    _daysWorker?.dispose();
     pageController.dispose();
     scrollController.removeListener(_onScroll);
     scrollController.dispose();
@@ -184,7 +204,16 @@ class QuestionsElistController extends GetxController {
         }
 
         if (subjects.isNotEmpty) {
-          selectedSubIndex.value = 0;
+          var target = 0;
+          final pending = _pendingSubjectId;
+          if (pending != null) {
+            final idx = subjects
+                .indexWhere((e) => e.id.toString() == pending.toString());
+            target = idx >= 0 ? idx : 0; // 找不到则回退第一个
+            _pendingSubjectId = null; // 仅首次进入生效,项目切换重拉时不干扰
+          }
+          selectedSubIndex.value = target;
+          _syncSelectedPage(target);
         }
       }
 
@@ -192,6 +221,23 @@ class QuestionsElistController extends GetxController {
     } catch (e) {
       subjects.clear();
       isLoading.value = false;
+    }
+  }
+
+  /// 同步 PageView 实际页码到目标索引,保证 tab 高亮与内容页一致
+  void _syncSelectedPage(int index) {
+    if (pageController.hasClients) {
+      if ((pageController.page?.round() ?? 0) != index) {
+        pageController.jumpToPage(index);
+      }
+    } else {
+      // 首次进入时 subjects 为空、PageView 尚未构建,等重建后再跳页
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (pageController.hasClients &&
+            (pageController.page?.round() ?? 0) != index) {
+          pageController.jumpToPage(index);
+        }
+      });
     }
   }
 
@@ -365,7 +411,7 @@ class QuestionsElistController extends GetxController {
   }
 
   /// 点击试卷 - 跳转到答题界面
-  void onPaperTap(Map<String, dynamic> paper) {
+  Future<void> onPaperTap(Map<String, dynamic> paper) async {
     final paperId = paper['id'];
     final title = paper['title'] ?? '';
     final limitTime = paper['limit_time'] ?? 0;
@@ -376,7 +422,11 @@ class QuestionsElistController extends GetxController {
     // 根据页面类型设置模式：历年真题和模拟考试都使用 EXAM 模式
     final mode = 'EXAM';
 
-    Get.toNamed(
+    // practice 信息透传（practice_id>0 进入续答回填）
+    final practiceInfo = paper['practice'];
+    final isPastPaper = paper['type'] == 'PASTEXAM';
+
+    await Get.toNamed(
       '/question-train',
       arguments: {
         'paper_id': paperId,
@@ -387,8 +437,16 @@ class QuestionsElistController extends GetxController {
         'join_count': joinCount,
         'mode': mode,
         'pageType': pageType.value == 2 ? 'mock' : 'past',
+        // 收藏来源类型:模拟考试=3,历年真题=2
+        'type': pageType.value == 2 ? 3 : 2,
+        'practice': practiceInfo,
+        'source_scope': isPastPaper ? 'PAPER_PAST' : 'PAPER_MOCK',
+        'source_id': paperId,
       },
     );
+
+    // ★答题页返回后刷新试卷列表(practice 进度会变化,否则展示旧数据)
+    loadExamPapers();
   }
 
   /// 点击项目选择

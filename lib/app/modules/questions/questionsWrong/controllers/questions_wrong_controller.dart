@@ -106,17 +106,31 @@ class QuestionsWrongController extends GetxController {
   final RxString currentSortTime = '不限'.obs;
   final RxString currentSortOrder = '最近错误在前'.obs;
 
+  // ★2026-08-14 修复:ever() Worker 需手动释放,否则挂载在全局 Rx 上累积僵尸监听
+  Worker? _projectWorker;
+
   @override
   void onInit() {
     super.onInit();
     try {
       globalController = GlobalProjectController.to;
+      // ★监听全局科目(二级科目)变化:切换科目后自动按新科目重拉错题列表,
+      // 不再依赖路由参数 Get.arguments(全局可变,任何路由 push/pop 都会改写)
+      _projectWorker = ever(globalController.currentProject, (_) {
+        _loadWrongQuestions();
+      });
     } catch (e) {
       debugPrint('GlobalProjectController 获取失败: $e');
     }
     Future.delayed(const Duration(milliseconds: 100), () {
       _loadWrongQuestions();
     });
+  }
+
+  @override
+  void onClose() {
+    _projectWorker?.dispose();
+    super.onClose();
   }
 
   /// 加载错题列表，调用 wrongList 接口
@@ -133,13 +147,16 @@ class QuestionsWrongController extends GetxController {
       final params = <String, dynamic>{};
       params['order'] = currentSortOrder.value == '最近错误在前' ? 'desc' : 'asc';
 
-      final args = Get.arguments as Map<String, dynamic>?;
-      final argSubjectId = args?['subject_id'];
-      if (argSubjectId != null) {
-        params['subject_id'] = argSubjectId;
-      } else {
-        params['subject_id'] = globalController.currentProject.value?.id;
+      // ★科目过滤以全局当前二级科目为准(wrongList 与 collectList 同口径)。
+      // 不依赖 Get.arguments:其为全局可变值,任何路由 push/pop 都会改写,
+      // 多次切换科目后可能读到旧科目 ID → 列表显示旧科目数据。
+      final currentProjectId = globalController.currentProject.value?.id;
+      final subjectId = currentProjectId ??
+          (Get.arguments as Map<String, dynamic>?)?['subject_id'];
+      if (subjectId != null) {
+        params['subject_id'] = subjectId;
       }
+      final requestedSubjectId = subjectId;
 
       // 录入时间筛选
       if (currentSortTime.value != '不限') {
@@ -150,6 +167,10 @@ class QuestionsWrongController extends GetxController {
         'question/wrongList',
         queryParameters: params.isEmpty ? null : params,
       );
+
+      // 科目已切换,丢弃过期响应
+      final nowProjectId = globalController.currentProject.value?.id;
+      if (nowProjectId != requestedSubjectId) return;
 
       if (response.statusCode == 200) {
         final data = response.data;

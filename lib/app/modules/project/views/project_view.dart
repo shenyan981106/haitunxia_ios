@@ -4,6 +4,8 @@ import 'package:xmshop/app/services/global_project_controller.dart';
 import 'package:xmshop/app/services/screenAdapter.dart';
 import '../../../data/models/project_model.dart';
 import '../../../data/models/category_model.dart';
+import '../../../components/common_back_button.dart';
+import '../../../components/common_error_state.dart';
 import '../controllers/project_controller.dart';
 
 class ProjectView extends StatefulWidget {
@@ -83,38 +85,12 @@ class _ProjectViewState extends State<ProjectView> {
                           )
                         : _controller.errorMessage.value.isNotEmpty
                             ? // 错误状态
-                            Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.error_outline,
-                                      size: ScreenAdapter.fontSize(64),
-                                      color: const Color(0xFFFF6E40),
-                                    ),
-                                    SizedBox(height: ScreenAdapter.height(20)),
-                                    Text(
-                                      _controller.errorMessage.value,
-                                      style: TextStyle(
-                                        fontSize: ScreenAdapter.fontSize(28),
-                                        color: const Color(0xFF999999),
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    SizedBox(height: ScreenAdapter.height(30)),
-                                    ElevatedButton(
-                                      onPressed: () =>
-                                          _controller.fetchCategories(),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor:
-                                            const Color(0xFFFF6E40),
-                                        foregroundColor: Colors.white,
-                                        shape: StadiumBorder(),
-                                      ),
-                                      child: const Text('重新加载'),
-                                    ),
-                                  ],
-                                ),
+                            CommonErrorState(
+                                message: _controller.errorMessage.value,
+                                onRetry: () =>
+                                    _controller.fetchCategories(),
+                                buttonColor: const Color(0xFFFF6E40),
+                                iconColor: const Color(0xFFFF6E40),
                               )
                             : // 数据显示
                             SingleChildScrollView(
@@ -193,19 +169,8 @@ class _ProjectViewState extends State<ProjectView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 关闭按钮
-          GestureDetector(
-            onTap: () => Get.back(),
-            child: Container(
-              padding: EdgeInsets.all(ScreenAdapter.width(10)),
-              alignment: Alignment.centerLeft,
-              child: Icon(
-                Icons.close,
-                size: ScreenAdapter.fontSize(60),
-                color: const Color(0xFF333333),
-              ),
-            ),
-          ),
+          // 返回按钮
+          const CommonBackButton(),
           SizedBox(height: ScreenAdapter.height(100)),
           // 大标题
           Text(

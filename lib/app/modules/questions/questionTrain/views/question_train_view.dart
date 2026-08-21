@@ -8,6 +8,9 @@ import 'package:xmshop/app/data/models/question_model.dart';
 import 'package:xmshop/app/services/snackbar_utils.dart';
 import 'package:xmshop/app/services/screenAdapter.dart';
 import 'package:xmshop/app/services/htxFonts.dart';
+import 'package:xmshop/app/components/common_back_button.dart';
+import 'package:xmshop/app/components/app_tag.dart';
+import 'package:xmshop/app/components/common_empty_state.dart';
 import '../controllers/question_train_controller.dart';
 
 /// 题库训练页面
@@ -108,12 +111,15 @@ class QuestionTrainView extends GetView<QuestionTrainController> {
       height: ScreenAdapter.height(100),
       child: Row(
         children: [
-          _buildIconButton(Icons.arrow_back, () async {
-            if (await controller.onWillPop()) {
-              controller.canPopNow.value = true;
-              WidgetsBinding.instance.addPostFrameCallback((_) => Get.back());
-            }
-          }, isDark: isDark),
+          CommonBackButton(
+            color: _getIconColor(isDark),
+            onTap: () async {
+              if (await controller.onWillPop()) {
+                controller.canPopNow.value = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) => Get.back());
+              }
+            },
+          ),
           SizedBox(width: ScreenAdapter.width(50)),
           _buildTimer(isDark),
           const Spacer(),
@@ -412,7 +418,10 @@ class QuestionTrainView extends GetView<QuestionTrainController> {
               style: TextStyle(color: theme.text)));
     }
     if (controller.questions.isEmpty) {
-      return Center(child: Text('暂无题目', style: TextStyle(color: theme.text)));
+      return const CommonEmptyState(
+        icon: Icons.inbox_outlined,
+        title: '暂无题目',
+      );
     }
 
     return Container(
@@ -936,38 +945,42 @@ class _QuestionCard extends GetView<QuestionTrainController> {
   Widget build(BuildContext context) {
     final question = controller.questions[index];
 
-    return Obx(() {
-      // 根据模式决定显示内容
-      // 答题模式(TRAINING/EXAM): 只显示题目和选项
-      // 背题模式(VIEW): 显示题目、选项，点击选项后显示答案统计和解析
-      final bool isViewMode = controller.pageMode.value == 'VIEW';
-
-      return Column(
-        children: [
-          _buildQuestionContainer(question),
-
+    // ★2026-08-14 优化:答案统计/解析区拆独立 Obx(只监听 showExplanation/pageMode)。
+    // 此前整卡一个大 Obx,点选项(TRAINING/EXAM)时 showExplanation 变化导致
+    // 题干与全部选项一起重建;现在题干+选项区不再因解析开关重建
+    return Column(
+      children: [
+        _buildQuestionContainer(question),
+        Obx(() {
+          final bool isViewMode = controller.pageMode.value == 'VIEW';
+          final bool showAns = controller.showExplanation.value;
+          final children = <Widget>[];
           // 简答题正确答案显示
-          if (question.kind == 'SHORT' && controller.showExplanation.value) ...[
-            _buildSectionGap(),
-            _CorrectAnswerSection(
-                question: question, isDark: isDark, theme: theme),
-          ],
-
+          if (question.kind == 'SHORT' && showAns) {
+            children.addAll([
+              _buildSectionGap(),
+              _CorrectAnswerSection(
+                  question: question, isDark: isDark, theme: theme),
+            ]);
+          }
           // 答案统计 + 解析区域：背题模式下点击选项后才显示
-          if (isViewMode && controller.showExplanation.value) ...[
-            _buildSectionGap(),
-            _AnswerStats(index: index, isDark: isDark, theme: theme),
-            _buildSectionGap(),
-            _ExplanationSection(
-                question: question, isDark: isDark, theme: theme),
-            _buildSectionGap(),
-            _VideoSection(isDark: isDark, question: question),
-            _buildSectionGap(),
-            _KnowledgePointsSection(isDark: isDark, theme: theme),
-          ],
-        ],
-      );
-    });
+          if (isViewMode && showAns) {
+            children.addAll([
+              _buildSectionGap(),
+              _AnswerStats(index: index, isDark: isDark, theme: theme),
+              _buildSectionGap(),
+              _ExplanationSection(
+                  question: question, isDark: isDark, theme: theme),
+              _buildSectionGap(),
+              _VideoSection(isDark: isDark, question: question),
+              _buildSectionGap(),
+              _KnowledgePointsSection(isDark: isDark, theme: theme),
+            ]);
+          }
+          return Column(children: children);
+        }),
+      ],
+    );
   }
 
   Widget _buildQuestionContainer(Question question) {
@@ -1305,20 +1318,16 @@ class _QuestionTypeLabel extends GetView<QuestionTrainController> {
     final text = controller.getQuestionTypeText(question);
     final isDark = controller.isDarkMode.value;
 
-    return Container(
+    return AppTag(
+      text,
+      bgColor: isDark ? const Color(0xFF2A2A2A) : _labelBg,
+      textColor: isDark ? const Color(0xFF6B9BD1) : _labelText,
+      radius: 4,
+      fontSize: ScreenAdapter.fontSize(32),
+      fontWeight: FontWeight.w500,
       padding: EdgeInsets.symmetric(
           horizontal: ScreenAdapter.width(16),
           vertical: ScreenAdapter.height(8)),
-      decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF2A2A2A) : _labelBg,
-          borderRadius: BorderRadius.circular(4)),
-      child: Text(
-        text,
-        style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(32),
-            color: isDark ? const Color(0xFF6B9BD1) : _labelText,
-            fontWeight: FontWeight.w500),
-      ),
     );
   }
 }
@@ -1784,8 +1793,31 @@ class _QuestionHtmlText extends StatelessWidget {
     caseSensitive: false,
   );
 
+  // ★2026-08-14 优化:HtmlWidget 实例缓存(答题页最大交互热点)。
+  // 键 = 内容 + 影响渲染的样式参数。同一实例复用时 Flutter element 跳过子树
+  // 重建,`_normalizeContent` 正则管道与 HTML 解析均不重复执行——
+  // 点选项/翻题等高频重建从"每卡 5+ 个 HtmlWidget 全量重跑"降为 0 次解析。
+  static final Map<String, Widget> _widgetCache = {};
+  static const int _cacheLimit = 500;
+
   @override
   Widget build(BuildContext context) {
+    final key = '${content}\u0001${style.fontSize}\u0001${style.height}'
+        '\u0001${style.color}\u0001${style.fontWeight}';
+    final cached = _widgetCache[key];
+    if (cached != null) {
+      return cached;
+    }
+
+    final widget = _buildHtmlWidget();
+    if (_widgetCache.length >= _cacheLimit) {
+      _widgetCache.clear();
+    }
+    _widgetCache[key] = widget;
+    return widget;
+  }
+
+  Widget _buildHtmlWidget() {
     return HtmlWidget(
       _normalizeContent(content),
       baseUrl: Uri.parse(EnvConfig.baseUrl),

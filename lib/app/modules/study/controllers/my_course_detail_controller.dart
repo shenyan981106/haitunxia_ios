@@ -1,0 +1,434 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:get/get.dart';
+import 'package:dio/dio.dart' as dio;
+import '../services/study_video_adapter.dart';
+import '../../../data/providers/api_client.dart';
+import '../../../data/services/auth_service.dart';
+import '../../../services/snackbar_utils.dart';
+import 'package:xmshop/app/utils/app_log.dart';
+
+/// 我的课程详情控制器（目录/资料 + 页内播放）
+/// 播放/进度/详情加载逻辑与 DetailsController 同源，改动时注意同步。
+class MyCourseDetailController extends GetxController {
+  final currentTabIndex = 0.obs;
+
+  final RxMap<String, dynamic> courseDetail = <String, dynamic>{}.obs;
+
+  final RxList<dynamic> courseItems = <dynamic>[].obs;
+
+  final RxBool isLoading = false.obs;
+
+  StudyVideoAdapter? videoAdapter;
+  StreamSubscription<StudyVideoEvent>? _playerEventSubscription;
+
+  final RxString currentVideoUrl = ''.obs;
+  final RxString currentVideoTitle = ''.obs;
+  final RxBool isVideoPlaying = false.obs;
+  final RxInt currentPlayingLessonId = 0.obs;
+  final RxBool isFullScreen = false.obs;
+
+  int? _currentLessonId;
+  DateTime? _playStartTime;
+  bool _isHandlingCompletion = false;
+  bool _isPlayerInitialized = false;
+  bool _isVideoActuallyPlayed = false;
+  bool _isLoadingVideo = false;
+  Timer? _videoLoadingTimer;
+
+  @override
+  void onInit() {
+    super.onInit();
+    if (Get.arguments != null) {
+      final dynamic args = Get.arguments;
+      if (args is Map) {
+        // 先用列表页传入的课程 Map 预填图片/名称，进入即显示，不等详情接口
+        courseDetail.value = Map<String, dynamic>.from(args);
+        // ★2026-08-19 详情接口改为 api/mycourse/detail,传参 order_id + subject_id(三级科目,列表接口返回)
+        final orderId = int.tryParse(args['order_id']?.toString() ?? '');
+        if (orderId != null) {
+          getCourseDetail(
+            orderId: orderId,
+            subjectId: args['subject_id']?.toString(),
+          );
+        } else {
+          SnackbarUtils.showError("无效的订单ID");
+        }
+      }
+    }
+  }
+
+  void initPlayer(BuildContext context) {
+    if (_isPlayerInitialized && videoAdapter != null) {
+      return;
+    }
+
+    if (videoAdapter != null) {
+      _playerEventSubscription?.cancel();
+      videoAdapter!.dispose();
+    }
+
+    videoAdapter = StudyVideoAdapter.create();
+    videoAdapter!.init(context);
+
+    _playerEventSubscription = videoAdapter!.events.listen((event) {
+      if (event is EnterFullscreenEvent) {
+        enterFullscreen();
+      } else if (event is ExitFullscreenEvent) {
+        exitFullscreen();
+      } else if (event is StartEvent) {
+        _isVideoActuallyPlayed = true;
+        isVideoPlaying.value = true;
+        _dismissVideoLoading();
+      } else if (event is ProgressEvent) {
+        _isVideoActuallyPlayed = true;
+        _dismissVideoLoading();
+      } else if (event is ErrorEvent) {
+        _dismissVideoLoading();
+        SnackbarUtils.showError(event.message);
+        _isVideoActuallyPlayed = false;
+      } else if (event is CompleteEvent) {
+        if (_isHandlingCompletion) return;
+        isVideoPlaying.value = false;
+        if (_isVideoActuallyPlayed ||
+            (videoAdapter?.currentPosition ?? 0) > 2) {
+          _handleVideoCompleted();
+        }
+        _isVideoActuallyPlayed = false;
+      }
+    });
+
+    _isPlayerInitialized = true;
+  }
+
+  /// 进入全屏：横屏 + 隐藏系统 UI。
+  void enterFullscreen() {
+    isFullScreen.value = true;
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  /// 退出全屏：恢复竖屏与系统 UI。
+  void exitFullscreen() {
+    isFullScreen.value = false;
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
+  }
+
+  /// 全屏切换（供播放器视图内的全屏按钮回调）。
+  void toggleFullscreen() {
+    if (isFullScreen.value) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  }
+
+  /// 返回平台对应的播放器视图（供 view 调用）。
+  /// 内部会幂等地初始化播放器。
+  Widget buildPlayerView(BuildContext context) {
+    initPlayer(context);
+    final adapter = videoAdapter;
+    if (adapter == null) return const SizedBox.shrink();
+    return adapter.buildView(
+      context,
+      fullscreen: isFullScreen.value,
+      onToggleFullscreen: toggleFullscreen,
+    );
+  }
+
+  /// 拉取已购课程详情(★2026-08-19 起走 api/mycourse/detail,传 order_id + subject_id 三级科目)
+  Future<void> getCourseDetail({
+    required int orderId,
+    String? subjectId,
+  }) async {
+    isLoading.value = true;
+    try {
+      final response = await ApiClient.to.get(
+        'api/mycourse/detail',
+        queryParameters: {
+          'order_id': orderId,
+          if (subjectId != null && subjectId.isNotEmpty)
+            'subject_id': subjectId,
+        },
+        options: dio.Options(
+          headers: {
+            'token': Get.isRegistered<AuthService>()
+                ? AuthService.to.token.value ?? ''
+                : '',
+          },
+        ),
+      );
+
+      if (response.data != null && response.data['code'] == 1) {
+        final data = response.data['data'];
+        if (data is Map<String, dynamic>) {
+          // ★新接口结构:课程信息在 data.course 下。
+          // 把 course 字段合并进根 Map,兼容旧代码从根读取 title/price/cover_image_url/is_free 等。
+          if (data['course'] is Map) {
+            courseDetail.value = {
+              ...data,
+              ...Map<String, dynamic>.from(data['course'] as Map),
+            };
+          } else {
+            courseDetail.value = data;
+          }
+
+          // ★order 字段(已购权限 can_watch/is_expired/有效期等)合并进根,
+          // 新接口无 is_pay,播放/资料权限改读 order.can_watch
+          if (data['order'] is Map) {
+            courseDetail.addAll(Map<String, dynamic>.from(data['order'] as Map));
+          }
+
+          // ★章节目录:新接口结构 data.catalog.list(旧结构为 data.items)
+          final catalog = data['catalog'];
+          if (catalog is Map && catalog['list'] is List) {
+            courseItems.value = catalog['list'];
+          } else if (data['items'] is List) {
+            courseItems.value = data['items'];
+          }
+
+          // ★资料列表:materials 为 {list,total} 结构,把 list 挂到根供 view 读取
+          final materials = data['materials'];
+          if (materials is Map && materials['list'] is List) {
+            courseDetail['materials'] = materials['list'];
+          }
+
+          AppLog.d("Success: Course details loaded - ${courseDetail['title']}");
+        }
+      } else {
+        SnackbarUtils.showError(response.data['msg'] ?? "获取详情失败");
+      }
+    } catch (e) {
+      AppLog.d("Error: Failed to load course details - $e");
+      if (e is dio.DioException) {
+        SnackbarUtils.showError("服务器错误 ${e.response?.statusCode}");
+      } else {
+        SnackbarUtils.showError("获取课程详情失败");
+      }
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  void switchTab(int index) {
+    currentTabIndex.value = index;
+  }
+
+  /// 已购课程可看性:order.can_watch 优先(新接口无 is_pay),兼容旧 is_pay/is_free;已过期拦截
+  bool get canWatchCourse {
+    final canWatch = courseDetail['can_watch'] == true ||
+        courseDetail['can_watch']?.toString() == '1' ||
+        courseDetail['can_watch']?.toString() == 'true';
+    final isExpired = courseDetail['is_expired'] == true ||
+        courseDetail['is_expired']?.toString() == '1';
+    final isPay = courseDetail['is_pay']?.toString() == '1' ||
+        courseDetail['is_pay'] == true;
+    final isFree = courseDetail['is_free']?.toString() == '1';
+    return !isExpired && (canWatch || isPay || isFree);
+  }
+
+  void playCourseItem(dynamic item) {
+    // 视频加载中时忽略重复点击，避免大视频重复触发加载导致无法播放
+    if (_isLoadingVideo) return;
+
+    // 课程无 VIP 免购逻辑:未购未订或已过期即拦截
+    if (!canWatchCourse) {
+      SnackbarUtils.showError('请先购买或订阅课程');
+      return;
+    }
+
+    final String? videoUrl =
+        item['url']?.toString() ?? item['video_url']?.toString();
+    final String title = item['title']?.toString() ?? '课程视频';
+    final lessonId = int.tryParse(item['id']?.toString() ?? '');
+
+    final progress = item['progress'];
+    final lastPosition =
+        int.tryParse(progress?['last_position']?.toString() ?? '0') ?? 0;
+    final duration =
+        int.tryParse(progress?['duration']?.toString() ?? '0') ?? 0;
+    final initialPosition =
+        duration > 0 && lastPosition >= duration - 3 ? 0 : lastPosition;
+
+    if (videoAdapter != null) {
+      _saveCurrentProgress();
+    }
+
+    _currentLessonId = lessonId;
+    currentPlayingLessonId.value = lessonId ?? 0;
+    _playStartTime = DateTime.now();
+
+    if (videoUrl != null && videoUrl.isNotEmpty) {
+      _showVideoLoading();
+      playVideo(videoUrl, title, initialPosition);
+    } else {
+      SnackbarUtils.showInfo('该课程暂无视频 $title');
+    }
+  }
+
+  void playVideo(String url, String title, [int initialPosition = 0]) {
+    final adapter = videoAdapter;
+    if (adapter == null) {
+      _dismissVideoLoading();
+      return;
+    }
+
+    _isVideoActuallyPlayed = false;
+    currentVideoUrl.value = url;
+    currentVideoTitle.value = title;
+    isVideoPlaying.value = true;
+
+    adapter.play(
+      ApiClient.replaceUri(url),
+      title,
+      startPos: initialPosition.toDouble(),
+    );
+  }
+
+  /// 显示视频加载弹窗，并启动超时兜底，避免大视频卡在加载态。
+  /// 时长设为 18s，比 OhosVideoAdapter 的 15s initialize 超时略晚，
+  /// 让适配器先发出带具体原因的 ErrorEvent，本定时器仅作最终兜底。
+  void _showVideoLoading() {
+    _isLoadingVideo = true;
+    SnackbarUtils.showLoading(msg: '视频加载中..');
+    _videoLoadingTimer?.cancel();
+    _videoLoadingTimer = Timer(const Duration(seconds: 18), () {
+      if (_isLoadingVideo) {
+        _isLoadingVideo = false;
+        SnackbarUtils.dismissLoading();
+        SnackbarUtils.showError('视频加载超时，请稍后重试');
+      }
+    });
+  }
+
+  /// 关闭视频加载弹窗（已关闭则忽略，可安全多次调用）
+  void _dismissVideoLoading() {
+    if (!_isLoadingVideo) return;
+    _isLoadingVideo = false;
+    _videoLoadingTimer?.cancel();
+    _videoLoadingTimer = null;
+    SnackbarUtils.dismissLoading();
+  }
+
+  Future<void> _handleVideoCompleted() async {
+    if (_isHandlingCompletion) return;
+
+    _isHandlingCompletion = true;
+    await _saveCurrentProgress();
+
+    final nextItem = _getNextPlayableItem();
+    if (nextItem != null) {
+      playCourseItem(nextItem);
+    } else {
+      isVideoPlaying.value = false;
+      SnackbarUtils.showInfo('已播放到最后一节');
+    }
+
+    _isHandlingCompletion = false;
+  }
+
+  dynamic _getNextPlayableItem() {
+    final items = _flattenPlayableItems(courseItems);
+    if (items.isEmpty) return null;
+
+    final currentIndex = items.indexWhere((item) {
+      final itemId = int.tryParse(item['id']?.toString() ?? '');
+      final itemUrl = item['url']?.toString() ?? item['video_url']?.toString();
+      final processedItemUrl =
+          itemUrl != null ? ApiClient.replaceUri(itemUrl) : '';
+      return (_currentLessonId != null && itemId == _currentLessonId) ||
+          (currentVideoUrl.value.isNotEmpty &&
+              processedItemUrl == currentVideoUrl.value);
+    });
+
+    if (currentIndex >= 0 && currentIndex < items.length - 1) {
+      return items[currentIndex + 1];
+    }
+    return null;
+  }
+
+  List<dynamic> _flattenPlayableItems(List<dynamic> items) {
+    final result = <dynamic>[];
+
+    for (final item in items) {
+      if (item is! Map) continue;
+
+      final videoUrl = item['url']?.toString() ?? item['video_url']?.toString();
+      if (videoUrl != null && videoUrl.isNotEmpty) {
+        result.add(item);
+      }
+
+      final children = item['childlist'] ?? item['children'];
+      if (children is List) {
+        result.addAll(_flattenPlayableItems(children));
+      }
+    }
+
+    return result;
+  }
+
+  Future<void> _saveCurrentProgress() async {
+    if (_currentLessonId == null || videoAdapter == null) return;
+
+    final courseId = courseDetail['id'];
+    if (courseId == null) return;
+
+    try {
+      int position = videoAdapter!.currentPosition;
+      int duration = videoAdapter!.duration;
+
+      int watchDuration = 0;
+      if (_playStartTime != null) {
+        watchDuration = DateTime.now().difference(_playStartTime!).inSeconds;
+      }
+
+      await ApiClient.to.exam(
+        'coures/saveProgress',
+        method: 'POST',
+        data: {
+          'course_id': courseId.toString(),
+          'lesson_id': _currentLessonId.toString(),
+          'last_position': position,
+          if (duration > 0) 'duration': duration,
+          if (watchDuration > 0) 'watch_duration': watchDuration,
+        },
+      );
+
+      AppLog.d("Progress saved: lesson=$_currentLessonId, pos=$position");
+    } catch (e) {
+      AppLog.d("Error: Failed to save progress - $e");
+    }
+  }
+
+  @override
+  void onClose() {
+    _videoLoadingTimer?.cancel();
+    _videoLoadingTimer = null;
+    if (_isLoadingVideo) {
+      _isLoadingVideo = false;
+      SnackbarUtils.dismissLoading();
+    }
+    _saveCurrentProgress();
+    _playerEventSubscription?.cancel();
+    videoAdapter?.dispose();
+    // 页面退出时强制恢复竖屏与系统 UI，避免影响其他页面
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
+    super.onClose();
+  }
+}

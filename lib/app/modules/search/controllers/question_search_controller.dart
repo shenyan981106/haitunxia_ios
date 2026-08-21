@@ -2,6 +2,7 @@ import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import '../../../data/repositories/exam_repository.dart';
 import '../../../services/global_project_controller.dart';
+import 'package:xmshop/app/utils/app_log.dart';
 
 class SearchQuestion {
   final String id;
@@ -191,8 +192,8 @@ class QuestionSearchController extends GetxController {
             ? question.categoryName!
             : '题目搜索';
 
-    print('🔍 搜索跳转: question.id=${question.id}, title=$title');
-    print('🔍 rawJson keys: ${question.rawJson.keys.toList()}');
+    AppLog.d('🔍 搜索跳转: question.id=${question.id}, title=$title');
+    AppLog.d('🔍 rawJson keys: ${question.rawJson.keys.toList()}');
 
     Get.toNamed(
       '/question-train',

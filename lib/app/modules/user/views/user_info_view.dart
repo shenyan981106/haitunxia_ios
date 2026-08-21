@@ -7,6 +7,8 @@ import '../../../services/global_project_controller.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/models/user_model.dart';
 import '../../../services/snackbar_utils.dart';
+import '../../../components/common_app_bar.dart';
+import '../../../components/common_dialog.dart';
 import '../controllers/user_controller.dart';
 import 'modify_nickname_view.dart';
 import 'delete_account_view.dart';
@@ -18,19 +20,7 @@ class UserInfoView extends GetView<UserController> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FB),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF333333),
-        centerTitle: true,
-        title: Text(
-          '个人信息',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(40),
-            color: const Color(0xFF333333),
-          ),
-        ),
-      ),
+      appBar: const CommonAppBar(title: '个人信息'),
       body: ListView(
         padding: EdgeInsets.symmetric(
           horizontal: ScreenAdapter.width(30),
@@ -51,103 +41,25 @@ class UserInfoView extends GetView<UserController> {
       return;
     }
 
-    await Get.dialog(
-      Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            width: double.infinity,
-            margin: EdgeInsets.symmetric(
-              horizontal: ScreenAdapter.width(60),
-            ),
-            padding: EdgeInsets.all(ScreenAdapter.width(40)),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(ScreenAdapter.width(32)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '注销账号申请',
-                  style: TextStyle(
-                    fontSize: ScreenAdapter.fontSize(40),
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xFF333333),
-                  ),
-                ),
-                SizedBox(height: ScreenAdapter.height(24)),
-                Text(
-                  '尊敬的用户，您正在申请注销账号。请注意以下事项：\n\n'
-                  '1、账号注销后无法恢复，请谨慎操作\n'
-                  '2、您的所有个人信息将被清除\n'
-                  '3、您的学习记录、考试成绩将永久丢失\n'
-                  '4、已购买的课程将无法继续观看\n\n'
-                  '注销申请提交后，我们将在7个工作日内审核。\n\n'
-                  '如确认无误，请提交申请。',
-                  style: TextStyle(
-                    fontSize: ScreenAdapter.fontSize(28),
-                    color: const Color(0xFF666666),
-                    height: 1.5,
-                  ),
-                ),
-                SizedBox(height: ScreenAdapter.height(30)),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        Get.back();
-                      },
-                      child: Text(
-                        '取消',
-                        style: TextStyle(
-                          fontSize: ScreenAdapter.fontSize(30),
-                          color: const Color(0xFF666666),
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: ScreenAdapter.width(20)),
-                    ElevatedButton(
-                      onPressed: () async {
-                        final success =
-                            await controller.submitDeleteAccountRequest();
-                        if (success) {
-                          SnackbarUtils.showSuccess('注销申请已提交，请等待审核');
-                          Get.back();
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFE53935),
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: ScreenAdapter.width(40),
-                          vertical: ScreenAdapter.height(10),
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            ScreenAdapter.width(24),
-                          ),
-                        ),
-                      ),
-                      child: Text(
-                        '提交申请',
-                        style: TextStyle(
-                          fontSize: ScreenAdapter.fontSize(30),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    final confirmed = await CommonDialog.show(
+      title: '注销账号申请',
+      content: '尊敬的用户，您正在申请注销账号。请注意以下事项：\n\n'
+          '1、账号注销后无法恢复，请谨慎操作\n'
+          '2、您的所有个人信息将被清除\n'
+          '3、您的学习记录、考试成绩将永久丢失\n'
+          '4、已购买的课程将无法继续观看\n\n'
+          '注销申请提交后，我们将在7个工作日内审核。\n\n'
+          '如确认无误，请提交申请。',
+      confirmText: '提交申请',
+      confirmColor: const Color(0xFFE53935),
       barrierDismissible: false,
     );
+    if (confirmed) {
+      final success = await controller.submitDeleteAccountRequest();
+      if (success) {
+        SnackbarUtils.showSuccess('注销申请已提交，请等待审核');
+      }
+    }
   }
 
   Widget _buildActionCard() {

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../services/screenAdapter.dart';
+import '../../../components/common_app_bar.dart';
+import '../../../components/app_tag.dart';
 import '../../../routes/app_pages.dart';
 
 // 反馈记录列表页面
@@ -37,19 +39,7 @@ class FeedbackRecordsView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF333333),
-        centerTitle: true,
-        title: Text(
-          '反馈记录',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(36),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
+      appBar: const CommonAppBar(title: '反馈记录'),
       body: ListView.builder(
         padding: EdgeInsets.all(ScreenAdapter.width(32)),
         itemCount: _feedbackRecords.length,
@@ -90,42 +80,27 @@ class FeedbackRecordsView extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
+                AppTag(
+                  record['type'],
+                  bgColor: const Color(0xFFEBF2FF),
+                  fontSize: ScreenAdapter.fontSize(24),
                   padding: EdgeInsets.symmetric(
                     horizontal: ScreenAdapter.width(16),
                     vertical: ScreenAdapter.height(8),
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEBF2FF),
-                    borderRadius: BorderRadius.circular(ScreenAdapter.width(8)),
-                  ),
-                  child: Text(
-                    record['type'],
-                    style: TextStyle(
-                      fontSize: ScreenAdapter.fontSize(24),
-                      color: const Color(0xFF3D7CFF),
-                    ),
                   ),
                 ),
-                Container(
+                AppTag(
+                  status,
+                  bgColor: isReplied
+                      ? const Color(0xFFE8F5E9)
+                      : const Color(0xFFFFF3E0),
+                  textColor: isReplied
+                      ? const Color(0xFF4CAF50)
+                      : const Color(0xFFFF9800),
+                  fontSize: ScreenAdapter.fontSize(24),
                   padding: EdgeInsets.symmetric(
                     horizontal: ScreenAdapter.width(16),
                     vertical: ScreenAdapter.height(8),
-                  ),
-                  decoration: BoxDecoration(
-                    color: isReplied
-                        ? const Color(0xFFE8F5E9)
-                        : const Color(0xFFFFF3E0),
-                    borderRadius: BorderRadius.circular(ScreenAdapter.width(8)),
-                  ),
-                  child: Text(
-                    status,
-                    style: TextStyle(
-                      fontSize: ScreenAdapter.fontSize(24),
-                      color: isReplied
-                          ? const Color(0xFF4CAF50)
-                          : const Color(0xFFFF9800),
-                    ),
                   ),
                 ),
               ],
