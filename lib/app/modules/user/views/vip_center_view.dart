@@ -51,7 +51,7 @@ class VipCenterView extends GetView<VipCenterController> {
                         ),
                       );
                     }
-                    if (controller.currentTabSpecs.isEmpty) {
+                    if (!controller.hasContent) {
                       return Padding(
                         padding:
                             EdgeInsets.only(top: ScreenAdapter.height(120)),

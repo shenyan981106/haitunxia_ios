@@ -77,6 +77,16 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
   /// 指定科目名是否选中
   bool isSpecSelected(String name) => selectedSingleSpecNames.contains(name);
 
+  /// 页面主体是否有数据可渲染:
+  /// iOS 以 memberPackages 配置就绪为准(科目/档位走 iosMemberProducts,随后到);
+  /// 安卓/鸿蒙以 specs 非空为准(原逻辑)
+  bool get hasContent {
+    if (isIos) {
+      return !packages.isEmpty;
+    }
+    return currentTabSpecs.isNotEmpty;
+  }
+
   /// 是否还有可购买的科目(加载中/无数据时视为有,避免支付栏闪烁;全部已开通则无)
   bool get hasSelectableSpec {
     // iOS:列表为空(加载中/无数据)视为有;全部已开通则隐藏支付栏
@@ -241,6 +251,9 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
         },
       );
       final body = response.data;
+      if (kDebugMode) {
+        debugPrint('vip_center: iosMemberProducts 原始响应: $body');
+      }
       dynamic raw;
       if (body is Map && body['data'] is Map) {
         raw = body['data'];
@@ -254,14 +267,32 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
         iosProducts.value = products;
         iosSubjects.value = products.subjects;
         iosTiers.value = products.tiers;
+        if (kDebugMode) {
+          debugPrint('vip_center: iosMemberProducts 解析结果: '
+              'subjects=${products.subjects.length}, tiers=${products.tiers.length}');
+        }
+        // 接口成功但 subjects 为空:提示区分"无可开通科目"与"接口失败"两种场景
+        if (products.subjects.isEmpty) {
+          SnackbarUtils.showInfo('当前无可开通科目');
+        }
       } else {
         iosProducts.value = null;
         iosSubjects.clear();
         iosTiers.clear();
+        if (kDebugMode) {
+          debugPrint('vip_center: iosMemberProducts 响应无 data/结构不符');
+        }
+        SnackbarUtils.showError('获取会员价格档位数据异常');
       }
     } on DioException catch (e) {
+      if (kDebugMode) {
+        debugPrint('vip_center: iosMemberProducts 请求失败: ${e.message}');
+      }
       ApiErrorHandler.handleDioError(e, fallbackMessage: '获取会员价格档位失败');
     } catch (e) {
+      if (kDebugMode) {
+        debugPrint('vip_center: iosMemberProducts 解析异常: $e');
+      }
       ApiErrorHandler.handleError(e, fallbackMessage: '获取会员价格档位失败');
     } finally {
       _resetIosSelection();
