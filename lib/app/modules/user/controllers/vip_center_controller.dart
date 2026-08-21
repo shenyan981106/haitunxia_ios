@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -82,7 +83,7 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
   /// 安卓/鸿蒙以 specs 非空为准(原逻辑)
   bool get hasContent {
     if (isIos) {
-      return !packages.isEmpty;
+      return packages.isNotEmpty;
     }
     return currentTabSpecs.isNotEmpty;
   }
@@ -255,10 +256,26 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
         debugPrint('vip_center: iosMemberProducts 原始响应: $body');
       }
       dynamic raw;
-      if (body is Map && body['data'] is Map) {
+      if (body is Map && body['data'] != null) {
         raw = body['data'];
+        // 兼容双重编码:data 为 JSON 字符串时先解码
+        if (raw is String && raw.isNotEmpty) {
+          try {
+            raw = jsonDecode(raw);
+          } catch (_) {
+            raw = null;
+          }
+        }
       } else if (body is Map) {
         raw = body;
+      }
+
+      // 兼容 data.list 包裹(部分后端返回 {data: {list: {...}}})
+      if (raw is Map &&
+          raw['subjects'] == null &&
+          raw['tiers'] == null &&
+          raw['list'] is Map) {
+        raw = raw['list'];
       }
 
       if (raw is Map) {
@@ -271,9 +288,14 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
           debugPrint('vip_center: iosMemberProducts 解析结果: '
               'subjects=${products.subjects.length}, tiers=${products.tiers.length}');
         }
-        // 接口成功但 subjects 为空:提示区分"无可开通科目"与"接口失败"两种场景
+        // 接口成功但 subjects 为空:★诊断期把原始响应截断贴进提示(定位后恢复简洁文案)
         if (products.subjects.isEmpty) {
-          SnackbarUtils.showInfo('当前无可开通科目');
+          var rawHint = body.toString();
+          if (rawHint.length > 400) {
+            rawHint = rawHint.substring(0, 400);
+          }
+          SnackbarUtils.showError(
+              '当前无可开通科目(档位${products.tiers.length}个)\n响应: $rawHint');
         }
       } else {
         iosProducts.value = null;

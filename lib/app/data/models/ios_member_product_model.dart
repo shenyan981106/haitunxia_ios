@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// iOS 会员可选科目与价格档位数据模型
 ///
 /// 对应接口 `/addons/exam/pay/iosMemberProducts`(GET,传参 member_config_id +
@@ -75,6 +77,14 @@ class IosMemberProducts {
 
   factory IosMemberProducts.fromJson(Map<String, dynamic> json) {
     List<T> parseList<T>(dynamic raw, T Function(Map<String, dynamic>) fromJson) {
+      // 兼容双重编码:subjects/tiers 为 JSON 字符串时先解码
+      if (raw is String && raw.isNotEmpty) {
+        try {
+          raw = jsonDecode(raw);
+        } catch (_) {
+          return const [];
+        }
+      }
       if (raw is! List) return const [];
       return raw
           .whereType<Map>()
