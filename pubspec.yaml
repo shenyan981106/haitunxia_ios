@@ -43,11 +43,11 @@ dependencies:
 
   # === 安全存储 - token/user 加密落盘(android/ios/web 官方包;ohos 用 OpenHarmony SIG 适配) ===
   flutter_secure_storage: ^8.0.0
-  flutter_secure_storage_ohos:
-    git:
-      url: https://gitee.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
-      path: flutter_secure_storage_ohos
-      ref: v8.0.0_ohos_1.0.0
+  # flutter_secure_storage_ohos:
+  #   git:
+  #     url: https://gitee.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
+  #     path: flutter_secure_storage_ohos
+  #     ref: v8.0.0_ohos_1.0.0
   cached_network_image: ^3.4.1
   flutter_smart_dialog: ^5.1.0
   flutter_widget_from_html_core: ^0.15.2
