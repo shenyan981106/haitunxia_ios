@@ -42,7 +42,7 @@ dependencies:
   pin_code_fields: ^8.0.1
 
   # === 安全存储 - token/user 加密落盘(android/ios/web 官方包;ohos 用 OpenHarmony SIG 适配) ===
-  flutter_secure_storage: ^8.0.0
+  # flutter_secure_storage: ^8.0.0
   # flutter_secure_storage_ohos:
   #   git:
   #     url: https://gitee.com/openharmony-sig/fluttertpc_flutter_secure_storage.git
