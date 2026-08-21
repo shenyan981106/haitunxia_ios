@@ -7,6 +7,7 @@ import '../../../components/common_app_bar.dart';
 import '../../../components/common_empty_state.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/providers/api_client.dart';
+import '../../../data/models/ios_member_product_model.dart';
 import '../../../data/models/member_package_model.dart';
 import '../../../services/snackbar_utils.dart';
 import '../controllers/vip_center_controller.dart';
@@ -217,12 +218,12 @@ class VipCenterView extends GetView<VipCenterController> {
       if (pkg == null) {
         return const SizedBox.shrink();
       }
-      final info = controller.packagePriceInfo(pkg);
       final days = pkg.days;
       final expireDate = DateTime.now().add(Duration(days: days));
       final expireText =
           '${expireDate.year}-${expireDate.month.toString().padLeft(2, '0')}-${expireDate.day.toString().padLeft(2, '0')}';
-      final perDay = days > 0 ? info.price / days : 0.0;
+      // iOS 按档位价计算日均价(与支付栏/苹果实扣一致),安卓/鸿蒙按规格合计
+      final perDay = days > 0 ? controller.payPrice / days : 0.0;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -311,9 +312,37 @@ class VipCenterView extends GetView<VipCenterController> {
     });
   }
 
-  /// 选择科目(单科规格,多选):按钮选中态联动
+  /// 选择科目(安卓/鸿蒙:单科规格多选;iOS:可选科目列表多选,价格按档位)
   Widget _buildSubjectSection() {
     return Obx(() {
+      if (controller.isIos) {
+        final subjects = controller.iosSubjects;
+        if (subjects.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: ScreenAdapter.height(40)),
+            Text(
+              '科目列表',
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(44),
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF333333),
+              ),
+            ),
+            SizedBox(height: ScreenAdapter.height(30)),
+            Wrap(
+              spacing: ScreenAdapter.width(20),
+              runSpacing: ScreenAdapter.height(20),
+              children:
+                  subjects.map((s) => _buildIosSubjectButton(s)).toList(),
+            ),
+          ],
+        );
+      }
+
       final specs = controller.currentTabSpecs;
       if (specs.isEmpty) {
         return const SizedBox.shrink();
@@ -339,6 +368,61 @@ class VipCenterView extends GetView<VipCenterController> {
         ],
       );
     });
+  }
+
+  /// iOS 可选科目按钮(多选,选中态蓝底白字,样式同安卓规格按钮;已开通科目置灰不可选)
+  Widget _buildIosSubjectButton(IosMemberSubject subject) {
+    final isSelected = controller.selectedIosSubjectIds.contains(subject.id);
+
+    // 已开通的科目:置灰不可选
+    if (subject.opened) {
+      return Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: ScreenAdapter.width(36),
+          vertical: ScreenAdapter.height(16),
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(ScreenAdapter.width(12)),
+          border: Border.all(color: const Color(0xFFE0E3E8), width: 1),
+        ),
+        child: Text(
+          subject.name,
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(32),
+            color: const Color(0xFFB0B3BA),
+          ),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: () => controller.toggleIosSubject(subject.id),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: ScreenAdapter.width(36),
+          vertical: ScreenAdapter.height(16),
+        ),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF3D7CFF) : Colors.white,
+          borderRadius: BorderRadius.circular(ScreenAdapter.width(12)),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF3D7CFF)
+                : const Color(0xFFD0D5DD),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          subject.name,
+          style: TextStyle(
+            fontSize: ScreenAdapter.fontSize(32),
+            color: isSelected ? Colors.white : const Color(0xFF3D7CFF),
+            fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSubjectButton(MemberSpec spec) {
@@ -776,8 +860,8 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
       if (pkg == null) {
         return const SizedBox.shrink();
       }
-      final info = widget.controller.packagePriceInfo(pkg);
-      final displayPrice = '¥${_formatPrice(info.price)}';
+      // iOS 按档位价展示(与苹果弹窗实扣一致),安卓/鸿蒙按规格合计
+      final displayPrice = '¥${_formatPrice(widget.controller.payPrice)}';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -862,7 +946,8 @@ class _BottomPayBarWidgetState extends State<_BottomPayBarWidget> {
       final pkg = widget.controller.package;
       var priceText = '';
       if (pkg != null) {
-        priceText = _formatPrice(widget.controller.packagePriceInfo(pkg).price);
+        // iOS 按档位价展示(与苹果弹窗实扣一致),安卓/鸿蒙按规格合计
+        priceText = _formatPrice(widget.controller.payPrice);
       }
       return SizedBox(
         width: ScreenAdapter.width(360),

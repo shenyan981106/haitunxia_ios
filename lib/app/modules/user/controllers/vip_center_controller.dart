@@ -8,6 +8,7 @@ import 'package:tobias/tobias.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fluwx/fluwx.dart';
 
+import '../../../data/models/ios_member_product_model.dart';
 import '../../../data/models/member_package_model.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../data/services/auth_service.dart';
@@ -40,6 +41,19 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
   final Fluwx _fluwx = Fluwx();
   FluwxCancelable? _wechatPaySubscription;
 
+  // ==================== iOS 苹果内购(可选科目 + 价格档位) ====================
+
+  /// iOS 专用:可选科目与价格档位接口返回(★仅 iOS 拉取,见 _fetchIosMemberProducts)
+  final RxList<IosMemberSubject> iosSubjects = <IosMemberSubject>[].obs;
+  final RxList<IosMemberTier> iosTiers = <IosMemberTier>[].obs;
+  final Rxn<IosMemberProducts> iosProducts = Rxn<IosMemberProducts>();
+
+  /// iOS 选中的三级科目 ID 集合(多选,展示价按选中数量取档位)
+  final RxSet<int> selectedIosSubjectIds = <int>{}.obs;
+
+  /// 是否 iOS(苹果内购链路)
+  bool get isIos => Platform.isIOS;
+
   // ==================== 派生状态 ====================
 
   /// 当前会员配置(接口返回单条,不区分年/季/月卡)
@@ -65,6 +79,10 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
 
   /// 是否还有可购买的科目(加载中/无数据时视为有,避免支付栏闪烁;全部已开通则无)
   bool get hasSelectableSpec {
+    // iOS:列表为空(加载中/无数据)视为有;全部已开通则隐藏支付栏
+    if (isIos) {
+      return iosSubjects.isEmpty || iosSubjects.any((s) => !s.opened);
+    }
     final specs = currentTabSpecs;
     return specs.isEmpty || specs.any((s) => !s.opened);
   }
@@ -72,6 +90,26 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
   /// 指定套餐中已选中的规格对象
   List<MemberSpec> selectedSpecsInPackage(MemberPackage pkg) {
     return pkg.specs.where((s) => isSpecSelected(s.name)).toList();
+  }
+
+  /// iOS 当前选中数量对应的价格档位(数量无对应档位时 null)
+  IosMemberTier? get selectedIosTier {
+    final products = iosProducts.value;
+    if (products == null) return null;
+    return products.tierByCount(selectedIosSubjectIds.length);
+  }
+
+  /// 支付栏展示价:iOS 按选中科目数量取档位价(与苹果弹窗实扣一致),
+  /// 安卓/鸿蒙按所选规格 price 求和
+  double get payPrice {
+    if (isIos) {
+      final tier = selectedIosTier;
+      if (tier != null) return _toDouble(tier.price);
+      return 0;
+    }
+    final pkg = package;
+    if (pkg == null) return 0;
+    return packagePriceInfo(pkg).price;
   }
 
   /// 套餐合计价格信息(售价/原价/立省),由选中规格 price 汇总
@@ -178,6 +216,66 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     } finally {
       isLoadingPackages.value = false;
       _resetSelections();
+      // ★iOS 追加拉取可选科目与价格档位(依赖 memberPackages 返回的配置 id)
+      if (Platform.isIOS) {
+        _fetchIosMemberProducts();
+      }
+    }
+  }
+
+  /// 拉取 iOS 可选科目与价格档位(★仅 iOS;member_config_id 取自 memberPackages 配置 id)
+  Future<void> _fetchIosMemberProducts() async {
+    final pkgId = package?.id;
+    if (pkgId == null || pkgId <= 0) {
+      iosProducts.value = null;
+      iosSubjects.clear();
+      iosTiers.clear();
+      return;
+    }
+    try {
+      final response = await ApiClient.to.exam(
+        'pay/iosMemberProducts',
+        queryParameters: {
+          'member_config_id': pkgId,
+          'subject_id': _resolveSubjectId(),
+        },
+      );
+      final body = response.data;
+      dynamic raw;
+      if (body is Map && body['data'] is Map) {
+        raw = body['data'];
+      } else if (body is Map) {
+        raw = body;
+      }
+
+      if (raw is Map) {
+        final products =
+            IosMemberProducts.fromJson(Map<String, dynamic>.from(raw));
+        iosProducts.value = products;
+        iosSubjects.value = products.subjects;
+        iosTiers.value = products.tiers;
+      } else {
+        iosProducts.value = null;
+        iosSubjects.clear();
+        iosTiers.clear();
+      }
+    } on DioException catch (e) {
+      ApiErrorHandler.handleDioError(e, fallbackMessage: '获取会员价格档位失败');
+    } catch (e) {
+      ApiErrorHandler.handleError(e, fallbackMessage: '获取会员价格档位失败');
+    } finally {
+      _resetIosSelection();
+    }
+  }
+
+  /// iOS 默认勾选第一个未开通科目(已开通的不可再选)
+  void _resetIosSelection() {
+    selectedIosSubjectIds.clear();
+    for (final subject in iosSubjects) {
+      if (!subject.opened) {
+        selectedIosSubjectIds.add(subject.id);
+        return;
+      }
     }
   }
 
@@ -255,6 +353,23 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
       selectedSingleSpecNames.remove(name);
     } else {
       selectedSingleSpecNames.add(name);
+    }
+  }
+
+  /// iOS 科目勾选切换(多选,按选中数量联动档位价);已开通科目不可再选
+  void toggleIosSubject(int id) {
+    IosMemberSubject? subject;
+    for (final s in iosSubjects) {
+      if (s.id == id) {
+        subject = s;
+        break;
+      }
+    }
+    if (subject == null || subject.opened) return;
+    if (selectedIosSubjectIds.contains(id)) {
+      selectedIosSubjectIds.remove(id);
+    } else {
+      selectedIosSubjectIds.add(id);
     }
   }
 
@@ -610,42 +725,27 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
 
   // ==================== iOS 苹果 IAP 内购 ====================
 
-  /// 汇总所选规格覆盖的三级科目 ID(subject_ids 逗号串,去重拼接)
-  String _collectSubjectIds(List<MemberSpec> specs) {
-    final ids = <String>[];
-    final seen = <String>{};
-    for (final s in specs) {
-      for (final id in s.subjectIds.split(',')) {
-        final trimmed = id.trim();
-        if (trimmed.isNotEmpty && seen.add(trimmed)) {
-          ids.add(trimmed);
-        }
-      }
-    }
-    return ids.join(',');
-  }
-
   /// iOS 会员开通:苹果 IAP 内购链路(仅 iOS,doPay 平台分支调用)
   ///
   /// 流程:createIosMemberOrder 下单(member_config_id + subject_ids,取
   /// order_sn/product_id)→ 落盘待校验订单 → StoreKit 购买 → 读凭证 →
   /// iosVerifyReceipt 服务端校验 → 成功走 _onPaySuccess 刷新链。
   /// 购买中断/校验失败由 IapService 启动补单兜底。
+  /// 可选科目与价格档位来自 pay/iosMemberProducts(展示价与苹果实扣一致)。
   Future<void> _doIosIapPay() async {
+    final products = iosProducts.value;
     final pkg = package;
-    if (pkg == null || pkg.specs.isEmpty) {
+    if (products == null || pkg == null) {
       SnackbarUtils.showError('暂无会员套餐');
       return;
     }
-    final specs = selectedSpecsInPackage(pkg);
-    if (specs.isEmpty) {
+    if (selectedIosSubjectIds.isEmpty) {
       SnackbarUtils.showError('请选择科目');
       return;
     }
-    // 所选科目必须全部在该套餐下有对应规格,否则下单金额与展示不一致
-    final expectedCount = selectedSingleSpecNames.length;
-    if (specs.length != expectedCount) {
-      SnackbarUtils.showError('所选科目暂不支持该套餐');
+    // 选中数量必须在档位表内(如 1-6 科),否则服务端无法定价
+    if (selectedIosTier == null) {
+      SnackbarUtils.showError('所选科目数量超出可购档位');
       return;
     }
 
@@ -654,12 +754,14 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     try {
       SnackbarUtils.showInfo('正在发起支付...');
 
-      // 1. iOS 下单:subject_ids 传所选规格覆盖的三级科目 ID(逗号分隔)
-      final subjectIds = _collectSubjectIds(specs);
+      // 1. iOS 下单:subject_ids 传所选三级科目 ID(逗号分隔,排序保证稳定),
+      //    服务端按数量反查档位返回 product_id
+      final subjectIds = (selectedIosSubjectIds.toList()..sort()).join(',');
       final orderResponse = await ApiClient.to.post(
         'addons/exam/pay/createIosMemberOrder',
         data: {
-          'member_config_id': pkg.id,
+          'member_config_id':
+              products.memberConfigId > 0 ? products.memberConfigId : pkg.id,
           'subject_ids': subjectIds,
         },
         options: Options(contentType: Headers.formUrlEncodedContentType),
