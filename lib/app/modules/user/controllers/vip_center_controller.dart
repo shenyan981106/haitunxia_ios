@@ -832,6 +832,11 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
         SnackbarUtils.showError('创建订单失败');
         return;
       }
+      if (kDebugMode) {
+        // ★诊断日志:比对后端 product_id 与 ASC 内购商品 ID 是否一致
+        debugPrint('vip_center: createIosMemberOrder 返回 '
+            'order_sn=$orderSn product_id=$productId');
+      }
 
       // 2. 落盘待校验订单(购买中断/校验失败由 IapService 启动补单兜底)
       IapService.to.savePendingOrder(

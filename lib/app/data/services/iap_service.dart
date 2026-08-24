@@ -121,7 +121,9 @@ class IapService extends GetxService {
       if (details == null) {
         _buyCompleter = null;
         _isBusy = false;
-        return const IapPayResult(IapPayStatus.failed, '商品信息获取失败,请稍后重试');
+        // ★诊断期带出商品 ID,便于比对 ASC 配置;定位后恢复简洁文案
+        return IapPayResult(
+            IapPayStatus.failed, '商品信息获取失败($productId),请稍后重试');
       }
 
       // 2. 发起购买,结果经 purchaseStream 回调
@@ -157,7 +159,10 @@ class IapService extends GetxService {
         return null;
       }
       if (response.productDetails.isEmpty) {
-        debugPrint('IapService: 商品 $productId 不存在(order_sn=$orderSn)');
+        // ★商品查不到:ID 会落在 notFoundIDs(常见原因:ASC 未创建该商品/
+        // 商品未关联到当前 App/状态未达 Ready to Submit/后端返回的 ID 与 ASC 不一致)
+        debugPrint('IapService: 商品 $productId 不存在(order_sn=$orderSn),'
+            'notFoundIDs=${response.notFoundIDs}');
         return null;
       }
       return response.productDetails.first;
