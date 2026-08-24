@@ -38,12 +38,13 @@ import StoreKit
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  /// 读取内购凭证 base64;凭证文件不存在时(sandbox 首次购买常见)先刷新再读
+  /// 读取内购凭证 base64。
+  /// ★2026-08-24:凭证文件存在但可能**陈旧**——appStoreReceipt 只在 App 启动/
+  /// 显式刷新时才会从苹果服务器重新拉取,购买成功后立即读本地文件会**不含刚买
+  /// 的交易记录**,后端校验报「支付凭证中没有该商品的有效交易」且校验失败导致
+  /// 交易无法出队(死锁)。因此**每次读取都先 SKReceiptRefreshRequest 强制刷新**,
+  /// 刷新失败(如断网)再退回读现有文件。
   private func getReceiptData(result: @escaping FlutterResult) {
-    if let data = receiptData() {
-      result(data.base64EncodedString())
-      return
-    }
     pendingReceiptResult = result
     let refreshRequest = SKReceiptRefreshRequest()
     refreshRequest.delegate = self
@@ -76,9 +77,14 @@ import StoreKit
     DispatchQueue.main.async {
       guard let result = self.pendingReceiptResult else { return }
       self.pendingReceiptResult = nil
-      result(FlutterError(code: "REFRESH_FAILED",
-                          message: error.localizedDescription,
-                          details: nil))
+      // 刷新失败(断网等):退回读现有文件,避免校验流程直接中断
+      if let data = self.receiptData() {
+        result(data.base64EncodedString())
+      } else {
+        result(FlutterError(code: "REFRESH_FAILED",
+                            message: error.localizedDescription,
+                            details: nil))
+      }
     }
   }
 }

@@ -185,11 +185,16 @@ class IapService extends GetxService {
     if (purchase.status == PurchaseStatus.pending) return;
 
     if (purchase.status == PurchaseStatus.error) {
+      // ★失败交易必须 completePurchase 出队,否则同一商品再次购买会报
+      // storekit_duplicate_product_object(存在未完成的 pending transaction)
+      await _completePurchase(purchase);
       _completeBuy(IapPayResult(
           IapPayStatus.failed, purchase.error?.message ?? '购买失败'));
       return;
     }
     if (purchase.status == PurchaseStatus.canceled) {
+      // ★取消交易同样要 completePurchase 出队(同商品重复购买依赖出队)
+      await _completePurchase(purchase);
       _completeBuy(const IapPayResult(IapPayStatus.cancelled, '支付已取消'));
       return;
     }
