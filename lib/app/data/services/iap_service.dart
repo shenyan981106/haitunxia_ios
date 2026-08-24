@@ -203,7 +203,7 @@ class IapService extends GetxService {
     await _verifyAndComplete(purchase);
   }
 
-  /// 凭证校验 → 完成交易;校验失败保留交易与落盘订单,启动补单兜底
+  /// 凭证校验 → 完成交易;校验失败保留落盘订单,启动补单兜底
   Future<void> _verifyAndComplete(PurchaseDetails purchase) async {
     final pending = readPendingOrder();
     if (pending == null) {
@@ -226,6 +226,12 @@ class IapService extends GetxService {
       return;
     }
 
+    // ★2026-08-24 改为**先完成交易再校验**:appStoreReceipt 只有交易出队后
+    // 才可能包含该笔购买记录(此前先校验后出队:凭证陈旧读不到交易→校验失败
+    // →不出队→凭证永不更新,死锁报「支付凭证中没有该商品的有效交易」)。
+    // 校验失败仍保留落盘订单,凭证已含交易,启动补单重试即可闭环。
+    await _completePurchase(purchase);
+
     try {
       final receipt = await getReceiptData();
       if (receipt == null) {
@@ -240,13 +246,21 @@ class IapService extends GetxService {
       );
       if (verify.ok) {
         clearPendingOrder();
-        await _completePurchase(purchase);
         _completeBuy(const IapPayResult(IapPayStatus.success, '支付成功'));
         // 刷新会员态(会员中心/题库按科目判断立即生效)
         SubjectVipService.to.refreshCurrentProject();
         AuthService.to.fetchUserInfo();
       } else {
-        // 校验失败(如"内购商品与订单不匹配"):不 complete,交易留存下轮补单
+        // ★凭证已被其他订单使用(同商品重复购买:沙盒/重复下单返回同一交易):
+        // 该商品实际已支付开通,按成功收尾——清落盘订单防每次启动死循环重试
+        if (_isReceiptAlreadyUsed(verify.message)) {
+          clearPendingOrder();
+          _completeBuy(const IapPayResult(IapPayStatus.success, '该科目已开通'));
+          SubjectVipService.to.refreshCurrentProject();
+          AuthService.to.fetchUserInfo();
+          return;
+        }
+        // 其他校验失败(如"内购商品与订单不匹配"):保留落盘订单,启动补单重试
         _completeBuy(IapPayResult(IapPayStatus.failed, verify.message));
       }
     } catch (e) {
@@ -393,6 +407,18 @@ class IapService extends GetxService {
       // 静默刷新(登录态/按科目 VIP 状态)
       AuthService.to.fetchUserInfo();
       SubjectVipService.to.refreshCurrentProject();
+    } else if (_isReceiptAlreadyUsed(verify.message)) {
+      // 凭证已被其他订单使用:商品已开通,清残留订单避免每次启动重复重试
+      clearPendingOrder();
+      SubjectVipService.to.refreshCurrentProject();
+      AuthService.to.fetchUserInfo();
     }
+  }
+
+  /// 判断校验失败是否为「凭证已被其他订单使用」(同商品重复购买场景:
+  /// 苹果返回同一交易,凭证已被之前订单消费,商品实际已开通;
+  /// 按成功收尾避免死循环;★后端可返回稳定错误码后替换此文案匹配)
+  bool _isReceiptAlreadyUsed(String message) {
+    return message.contains('已被') && message.contains('使用');
   }
 }
