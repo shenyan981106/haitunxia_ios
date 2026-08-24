@@ -2,8 +2,8 @@ import 'dart:convert';
 
 /// iOS 会员可选科目与价格档位数据模型
 ///
-/// 对应接口 `/addons/exam/pay/iosMemberProducts`(GET,传参 member_config_id +
-/// subject_id=二级科目 ID,★仅 iOS 调用,见 07 §3.4):返回**科目列表**
+/// 对应接口 `/addons/exam/pay/iosMemberProducts`(POST form-urlencoded,
+/// 传参 member_config_id + subject_id=二级科目 ID,★仅 iOS 调用,见 07 §3.4):返回**科目列表**
 /// (subjects,id/name/opened——★opened 为后端 2026-08-21 新增字段,已开通科目
 /// 页面置灰不可选)与**价格档位列表**
 /// (tiers,按所选科目数量定价,如 1科 68 / 2科 128 ...)。

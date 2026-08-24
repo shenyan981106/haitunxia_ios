@@ -244,12 +244,14 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
       return;
     }
     try {
-      final response = await ApiClient.to.exam(
-        'pay/iosMemberProducts',
-        queryParameters: {
+      // ★后端为 POST 接口,GET 传参收不到 member_config_id 会返回「会员配置ID必须为正整数」
+      final response = await ApiClient.to.post(
+        'addons/exam/pay/iosMemberProducts',
+        data: {
           'member_config_id': pkgId,
           'subject_id': _resolveSubjectId(),
         },
+        options: Options(contentType: Headers.formUrlEncodedContentType),
       );
       final body = response.data;
       if (kDebugMode) {
@@ -288,14 +290,9 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
           debugPrint('vip_center: iosMemberProducts 解析结果: '
               'subjects=${products.subjects.length}, tiers=${products.tiers.length}');
         }
-        // 接口成功但 subjects 为空:★诊断期把原始响应截断贴进提示(定位后恢复简洁文案)
+        // 接口成功但 subjects 为空:无可用科目时提示
         if (products.subjects.isEmpty) {
-          var rawHint = body.toString();
-          if (rawHint.length > 400) {
-            rawHint = rawHint.substring(0, 400);
-          }
-          SnackbarUtils.showError(
-              '当前无可开通科目(档位${products.tiers.length}个)\n响应: $rawHint');
+          SnackbarUtils.showError('当前无可开通科目');
         }
       } else {
         iosProducts.value = null;
