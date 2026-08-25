@@ -127,8 +127,10 @@ class IapService extends GetxService {
       }
 
       // 2. 发起购买,结果经 purchaseStream 回调
+      // ★商品类型为消耗型(2026-08-25 由非消耗型切换):会员按天到期需重复
+      // 购买续费,非消耗型同商品只能买一次且强制恢复购买(代码未实现),不匹配
       await InAppPurchasePlatform.instance
-          .buyNonConsumable(purchaseParam: PurchaseParam(productDetails: details));
+          .buyConsumable(purchaseParam: PurchaseParam(productDetails: details));
 
       // 3. 等待回调或超时(超时保留落盘订单,由启动补单兜底)
       return await _buyCompleter!.future.timeout(
