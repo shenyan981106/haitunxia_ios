@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
@@ -19,6 +21,7 @@ class _SplashViewState extends State<SplashView> {
   final GetStorage _storage = GetStorage();
   final String _agreementKey = 'user_agreed';
   bool _dialogShown = false;
+  Timer? _navTimer;
 
   @override
   void initState() {
@@ -38,7 +41,12 @@ class _SplashViewState extends State<SplashView> {
   }
 
   void _navigateToHome() {
-    Future.delayed(const Duration(seconds: 2), () {
+    _navTimer?.cancel();
+    _navTimer = Timer(const Duration(seconds: 2), () {
+      // ★2026-08-25 修复:冷启动时旧 token 401 会先被 ApiClient 拦截器
+      // 跳转到登录页(启动页随后被移除),此定时器若不取消会二次
+      // Get.offAllNamed(LOGIN),重叠导航卡死 Navigator 导致登录页无法点击。
+      if (!mounted || Get.currentRoute != Routes.SPLASH) return;
       final String initialRoute =
           AuthService.to.checkLogin() ? AppPages.INITIAL : Routes.LOGIN;
       Get.offAllNamed(
@@ -47,6 +55,7 @@ class _SplashViewState extends State<SplashView> {
   }
 
   void _handleAgree() {
+    if (!mounted) return;
     _storage.write(_agreementKey, true);
     Navigator.pop(context);
     _navigateToHome();
@@ -57,7 +66,9 @@ class _SplashViewState extends State<SplashView> {
   }
 
   void _showAgreementDialog() {
-    if (_dialogShown) return;
+    // ★2026-08-25 修复:若 401 已把启动页移除(或移除动画中),禁止再弹
+    // barrierDismissible:false 的协议弹窗,否则弹窗会盖在登录页上挡住所有点击
+    if (_dialogShown || !mounted || Get.currentRoute != Routes.SPLASH) return;
     _dialogShown = true;
 
     showDialog(
@@ -220,6 +231,12 @@ class _SplashViewState extends State<SplashView> {
         );
       },
     );
+  }
+
+  @override
+  void dispose() {
+    _navTimer?.cancel();
+    super.dispose();
   }
 
   @override

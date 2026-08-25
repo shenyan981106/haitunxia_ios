@@ -6,6 +6,7 @@ import 'package:get/get.dart' hide Response;
 import 'package:xmshop/app/config/env_config.dart';
 import 'package:xmshop/app/routes/app_pages.dart';
 import 'package:xmshop/app/data/services/auth_service.dart';
+import 'package:xmshop/app/services/snackbar_utils.dart';
 
 /// API客户端单例
 /// 统一的网络请求层，处理Token自动注入、拦截、统一错误处理
@@ -115,6 +116,9 @@ class ApiClient extends GetxService {
     if (Get.isRegistered<AuthService>()) {
       AuthService.to.clearAuth();
     }
+    // ★2026-08-25 修复:收起请求页面可能残留的全局 loading 遮罩,
+    // 否则其会跨越 offAllNamed 存续在登录页上方,挡住点击(最长 30 秒)
+    SnackbarUtils.dismissLoading();
     // 防止重复跳转(已在登录页则跳过)
     if (!Get.currentRoute.startsWith(Routes.LOGIN)) {
       Get.offAllNamed(Routes.LOGIN);

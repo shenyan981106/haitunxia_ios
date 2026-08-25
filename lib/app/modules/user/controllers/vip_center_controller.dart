@@ -862,7 +862,13 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
           break;
         case IapPayStatus.failed:
           _isPaying = false;
-          SnackbarUtils.showError(result.message);
+          // ★仍有待补单订单(可能已扣款但凭证校验未完成)时提示自动到账,
+          // 避免用户「钱扣了却报错」恐慌;IapService 启动补单/刷新会员态兜底
+          var message = result.message;
+          if (IapService.to.readPendingOrder() != null) {
+            message = '$message,若已扣款将自动到账';
+          }
+          SnackbarUtils.showError(message);
           break;
       }
     } on DioException catch (e) {

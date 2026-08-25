@@ -46,12 +46,13 @@ class IapVerifyResult {
 /// 苹果 IAP 内购服务(★仅 iOS 生效,安卓/鸿蒙调用直接返回失败)
 ///
 /// 会员开通专属流程:先 `pay/createIosMemberOrder` 下单(取 order_sn + product_id,
-/// 见 VipCenterController),再经本服务完成 StoreKit 购买 → 读 appStoreReceipt →
-/// `pay/iosVerifyReceipt` 服务端校验 → 校验成功才 completePurchase。
+/// 见 VipCenterController),再经本服务完成 StoreKit 购买 → completePurchase 出队 →
+/// 读 appStoreReceipt → `pay/iosVerifyReceipt` 服务端校验。
 ///
 /// 掉单兜底:购买前把订单信息落盘(GetStorage 键 `iap_pending_member_order`),
 /// 校验成功后清除;启动时发现残留订单且凭证存在则静默重试校验并刷新会员态。
-/// 校验失败**不** completePurchase,苹果下次启动会重新推送交易,配合残留订单补单。
+/// 交易先出队再读凭证校验(凭证只有出队后才更新出该笔购买),校验失败保留
+/// 落盘订单,配合启动补单重试闭环。
 class IapService extends GetxService {
   static IapService get to => Get.find();
 
@@ -71,6 +72,15 @@ class IapService extends GetxService {
   Completer<IapPayResult>? _buyCompleter;
   bool _isBusy = false;
 
+  /// 本次进行中购买的商品 ID。仅当 error/canceled 交易的商品 ID 匹配它(且未
+  /// 收到过该商品的 purchased 事件)时才判定本次购买失败,防 SKPaymentQueue
+  /// 重放的历史残留/其他商品的失败交易干扰本次购买(偶发「支付成功却报错」)。
+  String? _buyingProductId;
+
+  /// 本次购买是否已收到该商品的 purchased 事件(凭证校验进行中,忽略其后续
+  /// error 事件,防止竞态把已成功的购买覆盖为失败)
+  bool _buyPurchasedSeen = false;
+
   /// 当前平台是否支持苹果内购(仅 iOS)
   bool get isSupported => Platform.isIOS;
 
@@ -84,6 +94,10 @@ class IapService extends GetxService {
     _purchaseSub = InAppPurchasePlatform.instance.purchaseStream
         .listen(_handlePurchases, onError: (e) {
       debugPrint('IapService: purchaseStream 异常: $e');
+      // ★流异常时直接结束挂起购买(否则干等 300 秒超时);落盘订单保留,
+      // 由启动补单兜底
+      _completeBuy(
+          const IapPayResult(IapPayStatus.failed, '支付服务异常,请稍后重试'));
     });
 
     // 启动补单:上次购买中断/校验失败的残留订单(含苹果重推的未完成交易)
@@ -115,12 +129,16 @@ class IapService extends GetxService {
 
     _isBusy = true;
     _buyCompleter = Completer<IapPayResult>();
+    _buyingProductId = productId;
+    _buyPurchasedSeen = false;
     try {
       // 1. 查询商品(校验 product_id 存在,StoreKit 弹窗展示真实价格)
       final details = await _queryProduct(orderSn, productId);
       if (details == null) {
         _buyCompleter = null;
         _isBusy = false;
+        _buyingProductId = null;
+        _buyPurchasedSeen = false;
         // ★诊断期带出商品 ID,便于比对 ASC 配置;定位后恢复简洁文案
         return IapPayResult(
             IapPayStatus.failed, '商品信息获取失败($productId),请稍后重试');
@@ -138,6 +156,8 @@ class IapService extends GetxService {
         onTimeout: () {
           _buyCompleter = null;
           _isBusy = false;
+          _buyingProductId = null;
+          _buyPurchasedSeen = false;
           return const IapPayResult(
               IapPayStatus.failed, '支付确认超时,结果稍后自动同步');
         },
@@ -145,6 +165,8 @@ class IapService extends GetxService {
     } catch (e) {
       _buyCompleter = null;
       _isBusy = false;
+      _buyingProductId = null;
+      _buyPurchasedSeen = false;
       debugPrint('IapService: 发起购买失败: $e');
       return IapPayResult(IapPayStatus.failed, '发起购买失败:${e.toString()}');
     }
@@ -190,22 +212,65 @@ class IapService extends GetxService {
       // ★失败交易必须 completePurchase 出队,否则同一商品再次购买会报
       // storekit_duplicate_product_object(存在未完成的 pending transaction)
       await _completePurchase(purchase);
+      // ★只把「本次购买商品」的错误当作本次购买结果:SKPaymentQueue 启动/
+      // 购买期间会重放历史残留交易,其他商品或已处理过的错误交易仅出队清理,
+      // 不干扰本次购买(否则偶发「支付成功却报 SKErrorDomain」)
+      if (!_isCurrentBuyPurchase(purchase)) {
+        debugPrint('IapService: 忽略非本次购买的错误交易 ${purchase.productID}: '
+            '${purchase.error?.message}');
+        return;
+      }
       _completeBuy(IapPayResult(
-          IapPayStatus.failed, purchase.error?.message ?? '购买失败'));
+          IapPayStatus.failed, _describeIapError(purchase.error)));
       return;
     }
     if (purchase.status == PurchaseStatus.canceled) {
       // ★取消交易同样要 completePurchase 出队(同商品重复购买依赖出队)
       await _completePurchase(purchase);
+      if (!_isCurrentBuyPurchase(purchase)) {
+        debugPrint('IapService: 忽略非本次购买的取消交易 ${purchase.productID}');
+        return;
+      }
       _completeBuy(const IapPayResult(IapPayStatus.cancelled, '支付已取消'));
       return;
     }
 
     // purchased / restored:校验凭证后再完成交易
+    // ★已收到本次购买商品的成功交易:校验期间忽略该商品后续 error 事件,
+    // 防止竞态把已成功的购买覆盖为失败
+    if (purchase.productID == _buyingProductId) {
+      _buyPurchasedSeen = true;
+    }
     await _verifyAndComplete(purchase);
   }
 
-  /// 凭证校验 → 完成交易;校验失败保留落盘订单,启动补单兜底
+  /// 交易是否属于本次进行中的购买(商品 ID 匹配且尚未收到其成功交易)
+  bool _isCurrentBuyPurchase(PurchaseDetails purchase) {
+    return purchase.productID == _buyingProductId && !_buyPurchasedSeen;
+  }
+
+  /// 从插件透传的 IAPError 提取可读文案。
+  ///
+  /// ★插件 0.3.22 把 NSError 的 domain 原样放进 message(即裸 "SKErrorDomain",
+  /// 无错误码无描述,见 app_store_purchase_details.dart:48-56);可读描述在
+  /// details 的 NSLocalizedDescription(系统本地化,如「无法连接到 iTunes
+  /// Store」),取不到再退回通用文案。
+  String _describeIapError(IAPError? error) {
+    if (error != null) {
+      final details = error.details;
+      if (details is Map) {
+        final desc = details['NSLocalizedDescription'];
+        if (desc is String && desc.isNotEmpty) return desc;
+      }
+      final message = error.message;
+      if (message.isNotEmpty && message != 'SKErrorDomain') {
+        return message;
+      }
+    }
+    return '购买失败,请稍后重试';
+  }
+
+  /// 完成交易 → 读凭证 → 服务端校验;校验失败保留落盘订单,启动补单兜底
   Future<void> _verifyAndComplete(PurchaseDetails purchase) async {
     final pending = readPendingOrder();
     if (pending == null) {
@@ -285,6 +350,8 @@ class IapService extends GetxService {
     final completer = _buyCompleter;
     _buyCompleter = null;
     _isBusy = false;
+    _buyingProductId = null;
+    _buyPurchasedSeen = false;
     if (completer != null && !completer.isCompleted) {
       completer.complete(result);
     }
