@@ -39,6 +39,9 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
   final bool enablePayment = true; //屏蔽支付
   bool _isPaying = false;
 
+  /// iOS 科目/档位拉取防重入(支付成功刷新链并行触发时去重)
+  bool _isFetchingIosProducts = false;
+
   final Fluwx _fluwx = Fluwx();
   FluwxCancelable? _wechatPaySubscription;
 
@@ -236,8 +239,13 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
 
   /// 拉取 iOS 可选科目与价格档位(★仅 iOS;member_config_id 取自 memberPackages 配置 id)
   Future<void> _fetchIosMemberProducts() async {
+    // ★防重入:支付成功刷新链与 _fetchMemberPackages finally 可能并发触发,
+    // 已在途时直接复用结果,避免重复请求
+    if (_isFetchingIosProducts) return;
+    _isFetchingIosProducts = true;
     final pkgId = package?.id;
     if (pkgId == null || pkgId <= 0) {
+      _isFetchingIosProducts = false;
       iosProducts.value = null;
       iosSubjects.clear();
       iosTiers.clear();
@@ -314,6 +322,7 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
       }
       ApiErrorHandler.handleError(e, fallbackMessage: '获取会员价格档位失败');
     } finally {
+      _isFetchingIosProducts = false;
       _resetIosSelection();
     }
   }
@@ -591,6 +600,11 @@ class VipCenterController extends GetxController with WidgetsBindingObserver {
     _refreshUserInfo();
     // 刷新按科目 VIP 状态(题库等模块的按科目判断立即生效)
     SubjectVipService.to.refreshCurrentProject();
+    // ★iOS:立即并行拉取科目/档位(已开通置灰尽早翻转,不再等 memberPackages
+    // 完成后 finally 串行;与 finally 的并发触发由 _isFetchingIosProducts 去重)
+    if (Platform.isIOS) {
+      _fetchIosMemberProducts();
+    }
   }
 
   /// 发起支付(安卓/鸿蒙:支付宝/微信 App 支付;iOS:苹果 IAP 内购)

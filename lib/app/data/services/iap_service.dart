@@ -68,6 +68,10 @@ class IapService extends GetxService {
   /// 购买等待超时(StoreKit 弹窗停留上限)
   static const int _buyTimeoutSeconds = 300;
 
+  /// 读取凭证超时(SKReceiptRefreshRequest 为网络往返,弱网/沙盒可能很慢;
+  /// 超时返回 null → 校验失败保留落盘订单,由启动补单兜底,避免无限等待)
+  static const int _receiptTimeoutSeconds = 30;
+
   StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
   Completer<IapPayResult>? _buyCompleter;
   bool _isBusy = false;
@@ -362,8 +366,13 @@ class IapService extends GetxService {
   /// 读取内购凭证 appStoreReceipt 的 base64(不存在则先刷新凭证)
   Future<String?> getReceiptData() async {
     try {
-      final data = await _receiptChannel.invokeMethod<String>('getReceiptData');
+      final data = await _receiptChannel
+          .invokeMethod<String>('getReceiptData')
+          .timeout(const Duration(seconds: _receiptTimeoutSeconds));
       return (data != null && data.isNotEmpty) ? data : null;
+    } on TimeoutException {
+      debugPrint('IapService: 读取内购凭证超时(>$_receiptTimeoutSeconds 秒)');
+      return null;
     } on PlatformException catch (e) {
       debugPrint('IapService: 读取内购凭证失败: ${e.code} ${e.message}');
       return null;

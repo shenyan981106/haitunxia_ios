@@ -44,6 +44,24 @@ class _OrderConfirmViewState extends State<OrderConfirmView>
   /// 跳过 createCourseOrder 下单与收货地址选择(地址已随订单存储)
   bool get _isExistingOrder => widget.courseData['existing_order'] == true;
 
+  /// 展示金额:有 selected_specs 时 Σ 规格价格;否则回退课程价
+  /// (已有订单模式金额为订单 actual_amount/price,无 selected_specs,走回退分支)
+  /// 课程信息卡与底部按钮共用,保证两处金额一致
+  String get _displayPrice {
+    final List selectedSpecs =
+        (widget.courseData['selected_specs'] as List?)
+                ?.whereType<Map>()
+                .toList() ??
+            const [];
+    if (selectedSpecs.isEmpty) {
+      return widget.courseData['price']?.toString() ?? '0';
+    }
+    return selectedSpecs
+        .map((s) => double.tryParse(s['price']?.toString() ?? '') ?? 0)
+        .fold(0.0, (a, b) => a + b)
+        .toStringAsFixed(2);
+  }
+
   final Fluwx _fluwx = Fluwx();
   FluwxCancelable? _wechatPaySubscription;
 
@@ -270,12 +288,7 @@ class _OrderConfirmViewState extends State<OrderConfirmView>
         (data['selected_specs'] as List?)?.whereType<Map>().toList() ??
             const [];
     final bool hasSpecs = selectedSpecs.isNotEmpty;
-    final String price = hasSpecs
-        ? selectedSpecs
-            .map((s) => double.tryParse(s['price']?.toString() ?? '') ?? 0)
-            .fold(0.0, (a, b) => a + b)
-            .toStringAsFixed(2)
-        : (data['price']?.toString() ?? '0');
+    final String price = _displayPrice;
     final String specNames = hasSpecs
         ? selectedSpecs.map((s) => s['name']?.toString() ?? '').join(' + ')
         : '';
@@ -610,8 +623,8 @@ class _OrderConfirmViewState extends State<OrderConfirmView>
 
   /// 底部确认购买按钮
   Widget _buildBottomButton() {
-    final data = widget.courseData;
-    final price = data['price']?.toString() ?? '0';
+    // ★金额与课程信息卡共用 _displayPrice(有规格按 Σ 规格价,否则课程价)
+    final price = _displayPrice;
 
     return Container(
       width: double.infinity,
