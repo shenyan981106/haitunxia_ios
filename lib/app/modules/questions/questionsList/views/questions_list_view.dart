@@ -10,6 +10,7 @@ import "../../../../services/screenAdapter.dart";
 import '../../../../services/snackbar_utils.dart';
 import '../../../../components/common_app_bar.dart';
 import '../../../../components/common_empty_state.dart';
+import '../../../../components/vip_prompt_dialog.dart';
 import '../../../../data/services/subject_vip_service.dart';
 import 'package:xmshop/app/utils/app_log.dart';
 
@@ -653,72 +654,6 @@ class _ChapterCard extends StatelessWidget {
     );
   }
 
-  // 显示VIP提示弹窗
-  static void _showVipDialog() {
-    Get.dialog(
-      AlertDialog(
-        backgroundColor: Colors.white,
-        titlePadding: EdgeInsets.only(top: ScreenAdapter.height(56)),
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: ScreenAdapter.width(48),
-          vertical: ScreenAdapter.height(28),
-        ),
-        actionsPadding: EdgeInsets.only(
-          bottom: ScreenAdapter.height(48),
-          top: ScreenAdapter.height(36),
-        ),
-        title: Text(
-          '提示',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(50),
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF333333),
-          ),
-          textAlign: TextAlign.center,
-        ),
-        content: Text(
-          '该功能需要开通VIP会员才能使用',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(38),
-            color: const Color(0xFF666666),
-          ),
-          textAlign: TextAlign.center,
-        ),
-        actions: [
-          Center(
-            child: SizedBox(
-              width: ScreenAdapter.width(360),
-              height: ScreenAdapter.height(92),
-              child: ElevatedButton(
-                onPressed: () {
-                  Get.back();
-                  Get.toNamed('/vip-center');
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1890FF),
-                  shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(ScreenAdapter.width(12)),
-                  ),
-                ),
-                child: Text(
-                  '立即开通',
-                  style: TextStyle(
-                    fontSize: ScreenAdapter.fontSize(32),
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(ScreenAdapter.width(24)),
-        ),
-      ),
-    );
-  }
-
   // 构建节内项
   static Widget _buildSectionItem(
     Map<String, dynamic> section,
@@ -832,7 +767,13 @@ class _ChapterCard extends StatelessWidget {
                     final opened =
                         await SubjectVipService.to.ensureSubjectOpened(subjectId);
                     if (!opened) {
-                      _showVipDialog();
+                      VipPromptDialog.show(
+                        buttonText: '立即开通',
+                        onConfirm: () {
+                          Get.back();
+                          Get.toNamed('/vip-center');
+                        },
+                      );
                       return;
                     }
                   }

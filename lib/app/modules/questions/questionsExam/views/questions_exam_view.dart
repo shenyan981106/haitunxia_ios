@@ -92,14 +92,18 @@ class QuestionsExamView extends GetView<QuestionsExamController> {
                 itemCount: controller.subjects.length,
                 physics: const BouncingScrollPhysics(),
                 itemBuilder: (context, index) {
-                  final subject = controller.subjects[index];
-                  // 根据页面类型显示不同的列表内容
-                  if (controller.pageType == 'mock_exams' ||
-                      controller.pageType == 'past_exams') {
-                    return KeepAliveWrapper(child: _buildExamList(subject));
-                  }
-                  return KeepAliveWrapper(
-                      child: _buildCourseList(subject.name));
+                  // ★2026-08-26 优化:Obx 下沉到每个 item(与科目导航一致),
+                  // 课程/试卷数据变化只重建对应科目页,不再整页 PageView 重建
+                  return Obx(() {
+                    final subject = controller.subjects[index];
+                    // 根据页面类型显示不同的列表内容
+                    if (controller.pageType == 'mock_exams' ||
+                        controller.pageType == 'past_exams') {
+                      return KeepAliveWrapper(child: _buildExamList(subject));
+                    }
+                    return KeepAliveWrapper(
+                        child: _buildCourseList(subject.name));
+                  });
                 },
               )),
         ),
@@ -152,11 +156,8 @@ class QuestionsExamView extends GetView<QuestionsExamController> {
 
   // 构建课程列表
   Widget _buildCourseList(String subject) {
-    final filteredList = subject == '全部科目'
-        ? controller.courses
-        : controller.courses
-            .where((element) => (element['title'] as String).contains(subject))
-            .toList();
+    // ★2026-08-26 优化:过滤结果经 controller 缓存(静态课程数据按科目名缓存)
+    final filteredList = controller.getFilteredCourses(subject);
 
     if (filteredList.isEmpty) {
       return const CommonEmptyState(

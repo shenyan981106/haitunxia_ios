@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../controllers/home_controller.dart';
+import '../../tabs/controllers/tabs_controller.dart';
 import '../../../data/providers/api_client.dart';
+import '../../../components/cached_image.dart';
 import '../../../data/models/home_model.dart';
 import '../../../data/models/version_model.dart';
 
@@ -23,7 +25,9 @@ class _HomeViewState extends State<HomeView> {
   final PageController _bannerPageController = PageController();
   Timer? _bannerTimer;
   Worker? _updateWorker;
-  int _bannerIndex = 0;
+  Worker? _tabsWorker;
+  // ★2026-08-26 优化:轮播指示器索引改 ValueNotifier,切页不再 setState 整页重建
+  final ValueNotifier<int> _bannerIndex = ValueNotifier(0);
 
   /// ★2026-08-14 优化:各 tab 列表滚动位置(懒加载改造后切 tab 需手动保存/恢复)
   final Map<int, double> _tabOffsets = {};
@@ -42,6 +46,22 @@ class _HomeViewState extends State<HomeView> {
         _showUpdateDialog(model);
       }
     });
+    _startBannerTimer();
+    // ★2026-08-26 优化:首页在 IndexedStack 中隐藏时暂停轮播定时器(不再空转);
+    // 切回首页 tab 时恢复
+    _tabsWorker = ever(Get.find<TabsController>().currentIndex, (index) {
+      if (!mounted) return;
+      if (index == 0) {
+        _startBannerTimer();
+      } else {
+        _bannerTimer?.cancel();
+        _bannerTimer = null;
+      }
+    });
+  }
+
+  void _startBannerTimer() {
+    _bannerTimer?.cancel();
     _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       _autoScrollBanner();
     });
@@ -51,6 +71,8 @@ class _HomeViewState extends State<HomeView> {
   void dispose() {
     _bannerTimer?.cancel();
     _updateWorker?.dispose();
+    _tabsWorker?.dispose();
+    _bannerIndex.dispose();
     _bannerPageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -60,7 +82,7 @@ class _HomeViewState extends State<HomeView> {
     final slides = controller.homeApiResponse.value?.data?.slides ?? [];
     if (slides.length <= 1 || !_bannerPageController.hasClients) return;
 
-    final nextIndex = (_bannerIndex + 1) % slides.length;
+    final nextIndex = (_bannerIndex.value + 1) % slides.length;
     _bannerPageController.animateToPage(
       nextIndex,
       duration: const Duration(milliseconds: 350),
@@ -333,8 +355,9 @@ class _HomeViewState extends State<HomeView> {
           // 原内容区是 SliverToBoxAdapter + IndexedStack 包 3 个 shrinkWrap GridView,
           // 首帧一次性全量构建所有卡片、切 tab 三列表全重建;
           // 现按当前 tab 条件展开 SliverGrid/SliverList,按视口懒构建,未显示 tab 不构建
-          child: Obx(() {
-            return CustomScrollView(
+          // ★2026-08-26 优化:去掉整页 Obx,各区块(顶栏/banner/公告/tab 头/内容区)
+          // 各自局部监听——数据刷新与 tab 切换不再整页 CustomScrollView 重建
+          child: CustomScrollView(
               controller: _scrollController,
               slivers: [
                 // 顶部导航栏（吸顶）
@@ -379,76 +402,83 @@ class _HomeViewState extends State<HomeView> {
                     ),
                   ),
                 ),
-                // 内容区域（按当前 tab 条件展开,懒加载）
-                if (controller.currentTabIndex.value == 0)
-                  SliverPadding(
-                    padding: EdgeInsets.symmetric(horizontal: 32.w),
-                    sliver: SliverGrid(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 16.w,
-                        mainAxisSpacing: 16.h,
-                        childAspectRatio: 0.8,
+                // 内容区域(按当前 tab 条件展开,懒加载)
+                // ★2026-08-26 优化:内容区独立 Obx——tab 切换/首页数据刷新只重建内容区,
+                // 顶部导航/banner/公告/功能卡不受影响
+                Obx(() {
+                  if (controller.currentTabIndex.value == 0) {
+                    return SliverPadding(
+                      padding: EdgeInsets.symmetric(horizontal: 32.w),
+                      sliver: SliverGrid(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 16.w,
+                          mainAxisSpacing: 16.h,
+                          childAspectRatio: 0.8,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final courses = controller
+                                    .homeApiResponse.value?.data?.courses ??
+                                [];
+                            return _buildCoursesCard(courses[index]);
+                          },
+                          childCount: controller
+                                  .homeApiResponse.value?.data?.courses.length ??
+                              0,
+                        ),
                       ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final courses =
-                              controller.homeApiResponse.value?.data?.courses ??
-                                  [];
-                          return _buildCoursesCard(courses[index]);
-                        },
-                        childCount: controller
-                                .homeApiResponse.value?.data?.courses.length ??
-                            0,
+                    );
+                  }
+                  if (controller.currentTabIndex.value == 1) {
+                    return SliverPadding(
+                      padding: EdgeInsets.symmetric(horizontal: 32.w),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final papers =
+                                controller.homeApiResponse.value?.data?.papers ??
+                                    [];
+                            return Padding(
+                              padding: EdgeInsets.only(bottom: 32.h),
+                              child: _buildPastExamsCard(papers[index]),
+                            );
+                          },
+                          childCount: controller
+                                  .homeApiResponse.value?.data?.papers.length ??
+                              0,
+                        ),
                       ),
-                    ),
-                  ),
-                if (controller.currentTabIndex.value == 1)
-                  SliverPadding(
-                    padding: EdgeInsets.symmetric(horizontal: 32.w),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final papers =
-                              controller.homeApiResponse.value?.data?.papers ??
-                                  [];
-                          return Padding(
-                            padding: EdgeInsets.only(bottom: 32.h),
-                            child: _buildPastExamsCard(papers[index]),
-                          );
-                        },
-                        childCount: controller
-                                .homeApiResponse.value?.data?.papers.length ??
-                            0,
+                    );
+                  }
+                  if (controller.currentTabIndex.value == 2) {
+                    return SliverPadding(
+                      padding: EdgeInsets.symmetric(horizontal: 32.w),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final rooms =
+                                controller.homeApiResponse.value?.data?.rooms ??
+                                    [];
+                            return Padding(
+                              padding: EdgeInsets.only(bottom: 32.h),
+                              child: _buildMockExamsCard(rooms[index]),
+                            );
+                          },
+                          childCount: controller
+                                  .homeApiResponse.value?.data?.rooms.length ??
+                              0,
+                        ),
                       ),
-                    ),
-                  ),
-                if (controller.currentTabIndex.value == 2)
-                  SliverPadding(
-                    padding: EdgeInsets.symmetric(horizontal: 32.w),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final rooms =
-                              controller.homeApiResponse.value?.data?.rooms ??
-                                  [];
-                          return Padding(
-                            padding: EdgeInsets.only(bottom: 32.h),
-                            child: _buildMockExamsCard(rooms[index]),
-                          );
-                        },
-                        childCount: controller
-                                .homeApiResponse.value?.data?.rooms.length ??
-                            0,
-                      ),
-                    ),
-                  ),
+                    );
+                  }
+                  return const SliverToBoxAdapter(child: SizedBox.shrink());
+                }),
                 SliverToBoxAdapter(
                   child: SizedBox(height: 120.h),
                 ),
               ],
-            );
-          }),
+            ),
         ),
       ),
     );
@@ -559,10 +589,7 @@ class _HomeViewState extends State<HomeView> {
                 controller: _bannerPageController,
                 itemCount: slides.length,
                 onPageChanged: (index) {
-                  if (!mounted) return;
-                  setState(() {
-                    _bannerIndex = index;
-                  });
+                  _bannerIndex.value = index;
                 },
                 itemBuilder: (context, index) {
                   final slide = slides[index];
@@ -577,14 +604,10 @@ class _HomeViewState extends State<HomeView> {
                         borderRadius: BorderRadius.circular(36.r),
                       ),
                       child: slide.image.isNotEmpty
-                          ? Image.network(
-                              ApiClient.replaceUri(slide.image),
+                          ? CachedImage(
+                              url: ApiClient.replaceUri(slide.image),
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                debugPrint(
-                                    '轮播图加载失败: ${slide.image}, Error: $error');
-                                return _buildBannerFallback(slide.title);
-                              },
+                              errorWidget: _buildBannerFallback(slide.title),
                             )
                           : _buildBannerFallback(slide.title),
                     ),
@@ -596,23 +619,30 @@ class _HomeViewState extends State<HomeView> {
                   left: 0,
                   right: 0,
                   bottom: 18.h,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(slides.length, (index) {
-                      final isActive = index == _bannerIndex;
-                      return AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: isActive ? 28.w : 10.w,
-                        height: 10.h,
-                        margin: EdgeInsets.symmetric(horizontal: 5.w),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(
-                            alpha: isActive ? 0.95 : 0.55,
-                          ),
-                          borderRadius: BorderRadius.circular(999.r),
-                        ),
+                  // ★2026-08-26 优化:指示器改 ValueListenableBuilder 局部刷新,
+                  // 轮播自动滚动不再触发整页 setState 重建
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _bannerIndex,
+                    builder: (context, value, _) {
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(slides.length, (index) {
+                          final isActive = index == value;
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: isActive ? 28.w : 10.w,
+                            height: 10.h,
+                            margin: EdgeInsets.symmetric(horizontal: 5.w),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(
+                                alpha: isActive ? 0.95 : 0.55,
+                              ),
+                              borderRadius: BorderRadius.circular(999.r),
+                            ),
+                          );
+                        }),
                       );
-                    }),
+                    },
                   ),
                 ),
             ],
@@ -981,21 +1011,15 @@ class _HomeViewState extends State<HomeView> {
                 width: double.infinity,
                 height: 400.h,
                 child: imageUrl.isNotEmpty
-                    ? Image.network(
-                        ApiClient.replaceUri(imageUrl),
+                    ? CachedImage(
+                        url: ApiClient.replaceUri(imageUrl),
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          debugPrint('课程图片加载失败: $imageUrl, Error: $error');
-                          return _buildPlaceholderImage();
-                        },
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Center(
-                            child: CircularProgressIndicator(
-                              color: const Color(0xFF3D7CFF),
-                            ),
-                          );
-                        },
+                        errorWidget: _buildPlaceholderImage(),
+                        placeholder: Center(
+                          child: CircularProgressIndicator(
+                            color: const Color(0xFF3D7CFF),
+                          ),
+                        ),
                       )
                     : _buildPlaceholderImage(),
               ),

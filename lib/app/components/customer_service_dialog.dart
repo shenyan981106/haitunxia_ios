@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../data/providers/api_client.dart';
 import '../services/screenAdapter.dart';
+import 'cached_image.dart';
 
 class CustomerServiceDialog {
   static void show({String? qrCodeUrl}) {
@@ -63,14 +64,12 @@ class CustomerServiceDialog {
                           ],
                         ),
                         child: qrCodeUrl != null && qrCodeUrl.isNotEmpty
-                            ? Image.network(
-                                ApiClient.getFullImageUrl(qrCodeUrl),
+                            ? CachedImage(
+                                url: ApiClient.getFullImageUrl(qrCodeUrl),
                                 width: double.infinity,
                                 height: double.infinity,
                                 fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return _buildDefaultQRCode();
-                                },
+                                errorWidget: _buildDefaultQRCode(),
                               )
                             : _buildDefaultQRCode(),
                       ),

@@ -33,6 +33,20 @@ class QuestionsExamController extends GetxController {
     return subjects.map((e) => e.name).toList();
   }
 
+  // ★2026-08-26 优化:科目过滤结果缓存(courses 为静态硬编码列表,按科目名缓存,
+  // 避免每次 build 全量 where+toList 过滤)
+  final Map<String, List<Map<String, dynamic>>> _filteredCoursesCache = {};
+
+  List<Map<String, dynamic>> getFilteredCourses(String subject) {
+    return _filteredCoursesCache.putIfAbsent(subject, () {
+      return subject == '全部科目'
+          ? courses
+          : courses
+              .where((element) => (element['title'] as String).contains(subject))
+              .toList();
+    });
+  }
+
   // 课程数据
   final List<Map<String, dynamic>> courses = [
     {

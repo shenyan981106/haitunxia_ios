@@ -6,6 +6,7 @@ import '../../../services/global_project_controller.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../components/customer_service_dialog.dart';
+import '../../../components/cached_image.dart';
 import '../../../services/snackbar_utils.dart';
 import 'user_info_view.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -214,18 +215,16 @@ class UserView extends GetView<UserController> {
                   ],
                 ),
                 child: ClipOval(
-                  child: Image.network(
-                    url,
+                  child: CachedImage(
+                    url: url,
                     width: avatarWidth,
                     height: avatarHeight,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: avatarWidth,
-                        height: avatarHeight,
-                        color: Colors.grey[200],
-                      );
-                    },
+                    errorWidget: Container(
+                      width: avatarWidth,
+                      height: avatarHeight,
+                      color: Colors.grey[200],
+                    ),
                   ),
                 ),
               );

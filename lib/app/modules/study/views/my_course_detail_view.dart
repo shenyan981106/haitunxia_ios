@@ -10,6 +10,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../../../services/screenAdapter.dart';
 import '../../../data/providers/api_client.dart';
 import '../../../components/common_app_bar.dart';
+import '../../../components/common_empty_state.dart';
+import '../../../components/cached_image.dart';
 import '../controllers/my_course_detail_controller.dart';
 import '../../../services/snackbar_utils.dart';
 
@@ -333,14 +335,10 @@ class _MyCourseCatalogListState extends State<_MyCourseCatalogList> {
   @override
   Widget build(BuildContext context) {
     if (widget.items.isEmpty) {
-      return Center(
-        child: Text(
-          '暂无相关目录',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(36),
-            color: Color(0xFF999999),
-          ),
-        ),
+      return const CommonEmptyState(
+        icon: Icons.menu_book_outlined,
+        title: '暂无相关目录',
+        titleFontSize: 36,
       );
     }
 
@@ -395,34 +393,37 @@ class MyCourseDetailView extends GetView<MyCourseDetailController> {
       Get.put(MyCourseDetailController());
     }
 
+    // ★2026-08-26 优化:整页 Obx 拆细——外层只监听 isFullScreen(全屏切换低频),
+    // 加载态/数据刷新不再重建整个页面(含播放器);主内容与加载覆盖层各自独立 Obx
     return Obx(() {
+      if (controller.isFullScreen.value) {
+        return Scaffold(
+          backgroundColor: Colors.black,
+          body: _buildFullScreenPlayer(context),
+        );
+      }
       return Scaffold(
-        backgroundColor:
-            controller.isFullScreen.value ? Colors.black : Colors.white,
-        appBar: controller.isFullScreen.value
-            ? null
-            : CommonAppBar(
-                title: '我的课程详情',
-                titleStyle: TextStyle(
-                  fontSize: ScreenAdapter.fontSize(46),
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF333333),
-                ),
-              ),
-        body: Obx(() {
-          // 进入时已用列表页参数预填图片/名称，此处仅全空时显示加载/失败态
-          if (controller.isLoading.value && controller.courseDetail.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
-          }
+        backgroundColor: Colors.white,
+        appBar: CommonAppBar(
+          title: '我的课程详情',
+          titleStyle: TextStyle(
+            fontSize: ScreenAdapter.fontSize(46),
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF333333),
+          ),
+        ),
+        body: _buildNormalBody(context),
+      );
+    });
+  }
 
-          if (controller.courseDetail.isEmpty) {
-            return const Center(child: Text("加载失败或数据为空"));
-          }
-
-          if (controller.isFullScreen.value) {
-            return _buildFullScreenPlayer(context);
-          }
-
+  // 非全屏主内容:主内容 Obx 仅在 courseDetail 变化时重建(播放器不随加载态重挂载),
+  // 加载/失败覆盖层独立 Obx(覆盖层不拦截点击,刷新时内容仍可见可交互)
+  Widget _buildNormalBody(BuildContext context) {
+    return Stack(
+      children: [
+        Obx(() {
+          if (controller.courseDetail.isEmpty) return const SizedBox.shrink();
           return Column(
             children: [
               _buildVideoHeader(),
@@ -451,8 +452,17 @@ class MyCourseDetailView extends GetView<MyCourseDetailController> {
             ],
           );
         }),
-      );
-    });
+        Obx(() {
+          if (controller.isLoading.value && controller.courseDetail.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (controller.courseDetail.isEmpty) {
+            return const Center(child: Text("加载失败或数据为空"));
+          }
+          return const SizedBox.shrink();
+        }),
+      ],
+    );
   }
 
   Widget _buildTabs() {
@@ -542,14 +552,10 @@ class MyCourseDetailView extends GetView<MyCourseDetailController> {
   Widget _buildMaterialsList() {
     final materials = _getMaterialsList();
     if (materials.isEmpty) {
-      return Center(
-        child: Text(
-          '暂无相关资料',
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(40),
-            color: Color(0xFF999999),
-          ),
-        ),
+      return const CommonEmptyState(
+        icon: Icons.insert_drive_file_outlined,
+        title: '暂无相关资料',
+        titleFontSize: 40,
       );
     }
 
@@ -885,11 +891,10 @@ class MyCourseDetailView extends GetView<MyCourseDetailController> {
           Obx(() {
             if (!controller.isVideoPlaying.value) {
               return coverImage.isNotEmpty
-                  ? Image.network(
-                      ApiClient.replaceUri(coverImage),
+                  ? CachedImage(
+                      url: ApiClient.replaceUri(coverImage),
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          _buildDefaultCover(),
+                      errorWidget: _buildDefaultCover(),
                     )
                   : _buildDefaultCover();
             }

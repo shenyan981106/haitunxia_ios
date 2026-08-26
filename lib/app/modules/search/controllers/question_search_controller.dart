@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import '../../../data/repositories/exam_repository.dart';
@@ -112,25 +113,42 @@ class QuestionSearchController extends GetxController {
   final RxList<String> searchHistory = <String>[].obs;
   final RxString searchText = ''.obs;
 
+  // ★2026-08-26 优化:搜索防抖(300ms)——停止输入后自动搜索,连续输入只发最后一次;
+  // 手动点「搜索」/键盘搜索键仍立即执行(先取消防抖避免双发)
+  Timer? _debounceTimer;
+  String _lastSearchedKeyword = '';
+
   @override
   void onInit() {
     super.onInit();
-    searchController.addListener(() {
-      searchText.value = searchController.text;
-    });
+    searchController.addListener(_onSearchTextChanged);
   }
 
   @override
   void onClose() {
+    _debounceTimer?.cancel();
     searchController.dispose();
     super.onClose();
   }
 
+  void _onSearchTextChanged() {
+    searchText.value = searchController.text;
+    _debounceTimer?.cancel();
+    if (searchController.text.trim().isEmpty) return;
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (!isClosed && searchController.text.trim() != _lastSearchedKeyword) {
+        search();
+      }
+    });
+  }
+
   Future<void> search() async {
+    _debounceTimer?.cancel();
     final keyword = searchController.text.trim();
     if (keyword.isEmpty) {
       return;
     }
+    _lastSearchedKeyword = keyword;
 
     hasSearched.value = true;
     isSearching.value = true;
@@ -143,6 +161,9 @@ class QuestionSearchController extends GetxController {
 
       final response =
           await _examRepository.searchQuestions(keyword, subjectId: subjectId);
+
+      // ★2026-08-26:丢弃过期响应(输入已变化时,旧关键字的结果不再覆盖新结果)
+      if (keyword != searchController.text.trim()) return;
 
       if (response.isSuccess && response.data != null) {
         final listData = response.data!['list'];
@@ -177,6 +198,7 @@ class QuestionSearchController extends GetxController {
   }
 
   void clearSearch() {
+    _debounceTimer?.cancel();
     searchController.clear();
     searchResults.clear();
     hasSearched.value = false;

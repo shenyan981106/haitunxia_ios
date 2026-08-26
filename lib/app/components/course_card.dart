@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../data/providers/api_client.dart';
 import '../services/screenAdapter.dart';
 import 'app_tag.dart';
+import 'cached_image.dart';
 
 /// 通用课程卡片
 ///
@@ -303,11 +304,10 @@ class CourseCard extends StatelessWidget {
                     height: ScreenAdapter.height(210),
                     child: coverUrl.isEmpty
                         ? _buildCoverPlaceholder()
-                        : Image.network(
-                            coverUrl,
+                        : CachedImage(
+                            url: coverUrl,
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                _buildCoverPlaceholder(),
+                            errorWidget: _buildCoverPlaceholder(),
                           ),
                   ),
                 ),

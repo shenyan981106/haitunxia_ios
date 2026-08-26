@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../../../data/services/subject_vip_service.dart';
 import '../../../../components/common_dialog.dart';
+import '../../../../components/vip_prompt_dialog.dart';
 import '../controllers/questions_home_controller.dart';
 import 'package:xmshop/app/utils/app_log.dart';
 
@@ -726,61 +727,6 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
     });
   }
 
-  void _showVipDialog() {
-    Get.dialog(
-      AlertDialog(
-        backgroundColor: Colors.white,
-        titlePadding: EdgeInsets.only(top: 56.h),
-        contentPadding: EdgeInsets.symmetric(horizontal: 48.w, vertical: 28.h),
-        actionsPadding: EdgeInsets.only(bottom: 48.h, top: 36.h),
-        title: Text(
-          '提示',
-          style: TextStyle(
-            fontSize: 50.sp,
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF333333),
-          ),
-          textAlign: TextAlign.center,
-        ),
-        content: Text(
-          '该功能需要开通VIP会员才能使用',
-          style: TextStyle(
-            fontSize: 38.sp,
-            color: const Color(0xFF666666),
-          ),
-          textAlign: TextAlign.center,
-        ),
-        actions: [
-          Center(
-            child: SizedBox(
-              width: 360.w,
-              height: 92.h,
-              child: ElevatedButton(
-                onPressed: () => Get.back(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1890FF),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12.r),
-                  ),
-                ),
-                child: Text(
-                  '我知道了',
-                  style: TextStyle(
-                    fontSize: 32.sp,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24.r),
-        ),
-      ),
-    );
-  }
-
   Widget _buildToolItem(Map<String, dynamic> item) {
     final Color color = item['color'] as Color;
     final rawIcon = item['icon'];
@@ -804,7 +750,7 @@ class QuestionsHomeView extends GetView<QuestionsHomeController> {
         final opened =
             await SubjectVipService.to.ensureSubjectOpened(subjectId);
         if (!opened) {
-          _showVipDialog();
+          VipPromptDialog.show();
         } else {
           _handleCardTap(item);
         }

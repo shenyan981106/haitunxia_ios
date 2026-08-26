@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../data/providers/api_client.dart';
+import '../../../components/cached_image.dart';
 import '../controllers/login_controller.dart';
 import 'agreement_view.dart';
 
@@ -53,8 +54,8 @@ class LoginView extends GetView<LoginController> {
                             borderRadius: BorderRadius.circular(100.w),
                           ),
                           clipBehavior: Clip.antiAlias,
-                          child: Image.network(
-                            ApiClient.getFullImageUrl(
+                          child: CachedImage(
+                            url: ApiClient.getFullImageUrl(
                               'uploads/20260221/25421395d1396d43f6f5954af5e540c5.png',
                             ),
                             fit: BoxFit.cover,

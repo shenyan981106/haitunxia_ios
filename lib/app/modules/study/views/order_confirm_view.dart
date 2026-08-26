@@ -14,6 +14,7 @@ import '../../../data/repositories/exam_repository.dart';
 import '../../../services/snackbar_utils.dart';
 import '../../../utils/api_error_handler.dart';
 import '../../../components/app_tag.dart';
+import '../../../components/cached_image.dart';
 import '../../../components/common_app_bar.dart';
 import '../../../routes/app_pages.dart';
 
@@ -306,13 +307,12 @@ class _OrderConfirmViewState extends State<OrderConfirmView>
           ClipRRect(
             borderRadius: BorderRadius.circular(ScreenAdapter.width(12)),
             child: image.isNotEmpty
-                ? Image.network(
-                    ApiClient.replaceUri(image),
+                ? CachedImage(
+                    url: ApiClient.replaceUri(image),
                     width: double.infinity,
                     height: ScreenAdapter.height(360),
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        _buildPlaceholderImage(),
+                    errorWidget: _buildPlaceholderImage(),
                   )
                 : _buildPlaceholderImage(),
           ),

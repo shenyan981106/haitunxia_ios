@@ -138,25 +138,10 @@ class _SearchViewState extends State<SearchView> {
   }
 
   Widget _buildInitial() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.search,
-            size: 160.sp,
-            color: const Color(0xFFE0E0E0),
-          ),
-          SizedBox(height: 32.h),
-          Text(
-            '搜索你想要的题目',
-            style: TextStyle(
-              fontSize: 36.sp,
-              color: const Color(0xFF999999),
-            ),
-          ),
-        ],
-      ),
+    return const CommonEmptyState(
+      icon: Icons.search,
+      title: '搜索你想要的题目',
+      titleFontSize: 36,
     );
   }
 
