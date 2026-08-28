@@ -784,20 +784,12 @@ class DetailsView extends GetView<DetailsController> {
   }
 
   /// 底部按钮：免费显示"立即订阅"，付费显示"立即购买"
-  /// 已购买/已订阅时不显示底部区域
+  /// ★已购买后仍保留按钮(用户可继续购买其他科目/规格),不再隐藏底部区域
   Widget _buildBottomButton(BuildContext context) {
     final detail = controller.courseDetail;
-    final bool isPay =
-        detail['is_pay']?.toString() == '1' || detail['is_pay'] == true;
-
-    if (isPay) {
-      return SizedBox.shrink();
-    }
-
     final bool isFree = detail['is_free']?.toString() == '1';
     // 课程无 VIP 免购逻辑:免费课订阅,付费课购买
     final String buttonText = isFree ? '立即订阅' : '立即购买';
-    final String disabledText = isFree ? '已订阅' : '已购买';
     final String price = isFree ? '免费' : '${detail['price']}';
     final String originalPrice = detail['original_price']?.toString() ?? '';
 
@@ -866,50 +858,48 @@ class DetailsView extends GetView<DetailsController> {
             ),
             SizedBox(width: ScreenAdapter.width(24)),
             GestureDetector(
-              onTap: isPay
-                  ? null
-                  : () async {
-                      if (isFree) {
-                        final confirmed = await CommonDialog.show(
-                          title: '提示',
-                          content: '确定要订阅该课程吗？',
-                          confirmText: '确认',
-                          cancelText: '取消',
-                        );
-                        if (!confirmed) return;
+              onTap: () async {
+                if (isFree) {
+                  final confirmed = await CommonDialog.show(
+                    title: '提示',
+                    content: '确定要订阅该课程吗？',
+                    confirmText: '确认',
+                    cancelText: '取消',
+                  );
+                  if (!confirmed) return;
 
-                        final courseId = detail['id']?.toString();
-                        if (courseId != null && courseId.isNotEmpty) {
-                          try {
-                            final response = await ApiClient.to.exam(
-                              'pay/redeem',
-                              method: 'POST',
-                              data: {'course_id': courseId},
-                            );
-                            if (response.statusCode == 200) {
-                              final data = response.data;
-                              if (data is Map &&
-                                  (data['code'] == 1 || data['code'] == 200)) {
-                                SnackbarUtils.showSuccess('订阅成功');
-                                controller.getCourseDetail(
-                                  int.tryParse(courseId) ?? 0,
-                                );
-                              } else {
-                                SnackbarUtils.showError(
-                                    data['msg']?.toString() ?? '订阅失败');
-                              }
-                            } else {
-                              SnackbarUtils.showError('订阅失败');
-                            }
-                          } catch (e) {
-                            SnackbarUtils.showError('订阅失败：$e');
-                          }
+                  final courseId = detail['id']?.toString();
+                  if (courseId != null && courseId.isNotEmpty) {
+                    try {
+                      final response = await ApiClient.to.exam(
+                        'pay/redeem',
+                        method: 'POST',
+                        data: {'course_id': courseId},
+                      );
+                      if (response.statusCode == 200) {
+                        final data = response.data;
+                        if (data is Map &&
+                            (data['code'] == 1 || data['code'] == 200)) {
+                          SnackbarUtils.showSuccess('订阅成功');
+                          controller.getCourseDetail(
+                            int.tryParse(courseId) ?? 0,
+                          );
+                        } else {
+                          SnackbarUtils.showError(
+                              data['msg']?.toString() ?? '订阅失败');
                         }
-                        return;
+                      } else {
+                        SnackbarUtils.showError('订阅失败');
                       }
-                      // 付费课程先弹出规格选择弹窗
-                      _showCourseSpecSheet(context);
-                    },
+                    } catch (e) {
+                      SnackbarUtils.showError('订阅失败：$e');
+                    }
+                  }
+                  return;
+                }
+                // 付费课程先弹出规格选择弹窗(已购后仍可点,继续购买其他科目)
+                _showCourseSpecSheet(context);
+              },
               child: Transform.translate(
                 offset:
                     Offset(-ScreenAdapter.width(6), ScreenAdapter.height(0)),
@@ -918,16 +908,16 @@ class DetailsView extends GetView<DetailsController> {
                   height: ScreenAdapter.height(108),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: isPay ? Color(0xFFCCCCCC) : Color(0xFFFFB366),
+                    color: Color(0xFFFFB366),
                     borderRadius:
                         BorderRadius.circular(ScreenAdapter.width(64)),
                   ),
                   child: Text(
-                    isPay ? disabledText : buttonText,
+                    buttonText,
                     style: TextStyle(
                       fontSize: ScreenAdapter.fontSize(38),
                       fontWeight: FontWeight.w500,
-                      color: isPay ? Color(0xFF999999) : Colors.white,
+                      color: Colors.white,
                     ),
                   ),
                 ),
@@ -937,6 +927,24 @@ class DetailsView extends GetView<DetailsController> {
         ),
       ),
     );
+  }
+
+  /// 规格是否已购买(后端 specs 返回 is_purchased,true/'1'/'true' 视为已购;
+  /// 字段缺失/false 视为未购,置灰逻辑安全降级)
+  bool _isSpecPurchased(Map spec) {
+    final v = spec['is_purchased'];
+    if (v == null) return false;
+    if (v is bool) return v;
+    return v.toString() == '1' || v.toString().toLowerCase() == 'true';
+  }
+
+  /// 列表中第一个未购科目下标;全部已购/空列表返回 null
+  int? _firstUnpurchasedIndex(List list) {
+    for (var i = 0; i < list.length; i++) {
+      final s = list[i];
+      if (s is Map && !_isSpecPurchased(s)) return i;
+    }
+    return null;
   }
 
   /// 显示课程规格选择弹窗（班级种类 / 选择科目）
@@ -985,34 +993,50 @@ class DetailsView extends GetView<DetailsController> {
 
     // 预选:default_spec_id(新结构)定位科目与所属班级种类;无则默认选第一个科目
     // ★科目选中集:单科班(course_count=1)可多选,全科班(course_count>1)单选
+    // ★已购科目(is_purchased)不可选:预选/重置只定位未购科目,全部已购则空
     int selectedClassIndex = 0;
     final Set<int> selectedSubjectIndexes = <int>{};
+    // 指定班型对应的规格列表(新结构 specs[班型key] / 旧结构扁平数组按 type 过滤)
+    List specListOf(dynamic classType) {
+      final key = classType is Map ? (classType['key']?.toString() ?? '') : '';
+      final l = specsByType[key] is List
+          ? (specsByType[key] as List)
+          : const [];
+      if (l.isNotEmpty) return l;
+      return flatSpecs.where((s) => s['type']?.toString() == key).toList();
+    }
+
     if (defaultSpecId > 0) {
       for (var i = 0; i < effectiveClassTypes.length; i++) {
         final ct = effectiveClassTypes[i];
         final key = ct is Map ? ct['key']?.toString() : '';
         if (key == null || key.isEmpty) continue;
-        List list = specsByType[key] is List
-            ? (specsByType[key] as List)
-            : const [];
-        if (list.isEmpty) {
-          list = flatSpecs
-              .where((s) => s['type']?.toString() == key)
-              .toList();
-        }
+        final list = specListOf(ct);
         final idx = list.indexWhere((s) =>
             s is Map &&
             (int.tryParse(s['id']?.toString() ?? '') ?? 0) == defaultSpecId);
         if (idx >= 0) {
           selectedClassIndex = i;
-          selectedSubjectIndexes.add(idx);
+          final spec = list[idx];
+          if (spec is Map && _isSpecPurchased(spec)) {
+            // 默认规格科目已购:顺延到该班型第一个未购科目
+            final first = _firstUnpurchasedIndex(list);
+            if (first != null) selectedSubjectIndexes.add(first);
+          } else {
+            selectedSubjectIndexes.add(idx);
+          }
           break;
         }
       }
     }
     if (selectedSubjectIndexes.isEmpty) {
-      // 默认选中第一个班型的第一个科目
-      selectedSubjectIndexes.add(0);
+      // 默认选中第一个班型中第一个未购科目(全部已购则空)
+      final first = _firstUnpurchasedIndex(
+        effectiveClassTypes.isNotEmpty
+            ? specListOf(effectiveClassTypes[0])
+            : const [],
+      );
+      if (first != null) selectedSubjectIndexes.add(first);
     }
 
     Get.bottomSheet(
@@ -1175,10 +1199,14 @@ class DetailsView extends GetView<DetailsController> {
                               selected: selected,
                               onTap: () => setState(() {
                                 selectedClassIndex = index;
-                                // 切换班级种类后科目选中重置(默认选第一个)
-                                selectedSubjectIndexes
-                                  ..clear()
-                                  ..add(0);
+                                // 切换班级种类后科目选中重置(预选该班型第一个未购科目,全部已购则空)
+                                selectedSubjectIndexes.clear();
+                                final first = _firstUnpurchasedIndex(
+                                  specListOf(ct),
+                                );
+                                if (first != null) {
+                                  selectedSubjectIndexes.add(first);
+                                }
                               }),
                             );
                           }).toList(),
@@ -1202,12 +1230,18 @@ class DetailsView extends GetView<DetailsController> {
                             final label = spec is Map
                                 ? (spec['name']?.toString() ?? '')
                                 : '';
+                            // 已购科目(is_purchased)置灰不可选
+                            final purchased =
+                                spec is Map && _isSpecPurchased(spec);
                             final selected =
                                 selectedSubjectIndexes.contains(index);
                             return _buildSpecOption(
                               label: label,
                               selected: selected,
+                              disabled: purchased,
+                              purchased: purchased,
                               onTap: () => setState(() {
+                                if (purchased) return;
                                 if (isSingleSubjectMulti) {
                                   // 单科班:多选,点击切换选中/取消
                                   if (!selectedSubjectIndexes.add(index)) {
@@ -1239,7 +1273,7 @@ class DetailsView extends GetView<DetailsController> {
                               .toList();
                           if (currentSpecs.isNotEmpty &&
                               selectedSpecs.isEmpty) {
-                            SnackbarUtils.showError('请选择科目');
+                            SnackbarUtils.showError('请选择未购买的科目');
                             return;
                           }
                           Get.back();
@@ -1262,6 +1296,11 @@ class DetailsView extends GetView<DetailsController> {
                                 int.tryParse(courseId) ?? 0,
                               );
                             }
+                            // 跳转我的订单列表,定位"已支付" Tab,让用户立即看到新订单
+                            Get.toNamed(
+                              Routes.MY_ORDERS,
+                              arguments: {'initialTab': 1},
+                            );
                           }
                         },
                         child: Container(
@@ -1330,9 +1369,11 @@ class DetailsView extends GetView<DetailsController> {
     required String label,
     required bool selected,
     required VoidCallback onTap,
+    bool disabled = false,
+    bool purchased = false,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: disabled ? null : onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: EdgeInsets.symmetric(
@@ -1340,19 +1381,41 @@ class DetailsView extends GetView<DetailsController> {
           vertical: ScreenAdapter.height(20),
         ),
         decoration: BoxDecoration(
-          color: selected ? Color(0xFFFFF2F0) : Colors.white,
+          color: disabled
+              ? const Color(0xFFF5F5F5)
+              : (selected ? Color(0xFFFFF2F0) : Colors.white),
           border: Border.all(
-            color: selected ? Color(0xFFFF4D4F) : Color(0xFFEEEEEE),
+            color: disabled
+                ? const Color(0xFFE0E0E0)
+                : (selected ? Color(0xFFFF4D4F) : Color(0xFFEEEEEE)),
             width: ScreenAdapter.width(2),
           ),
           borderRadius: BorderRadius.circular(ScreenAdapter.width(10)),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: ScreenAdapter.fontSize(32),
-            color: selected ? Color(0xFFFF4D4F) : Color(0xFF333333),
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: ScreenAdapter.fontSize(32),
+                color: disabled
+                    ? const Color(0xFF999999)
+                    : (selected ? Color(0xFFFF4D4F) : Color(0xFF333333)),
+              ),
+            ),
+            // 已购科目标记
+            if (purchased) ...[
+              SizedBox(width: ScreenAdapter.width(12)),
+              Text(
+                '已购买',
+                style: TextStyle(
+                  fontSize: ScreenAdapter.fontSize(24),
+                  color: const Color(0xFF999999),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

@@ -18,6 +18,16 @@ class MyOrdersController extends GetxController {
   RxBool isLoading = false.obs;
 
   @override
+  void onInit() {
+    super.onInit();
+    // ★课程详情支付成功后跳转携带 initialTab(1=已支付),定位到对应 Tab
+    final args = Get.arguments;
+    if (args is Map && args['initialTab'] is int) {
+      currentTabIndex.value = args['initialTab'] as int;
+    }
+  }
+
+  @override
   void onReady() {
     super.onReady();
     getMyOrderList();
