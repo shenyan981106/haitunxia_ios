@@ -94,6 +94,11 @@ class UserView extends GetView<UserController> {
                             GlobalProjectController.to.currentProject.value?.id,
                       }),
                     ),
+                    _MenuItem(
+                      title: '收货地址',
+                      icon: Icons.location_on_outlined,
+                      onTap: () => Get.toNamed('/address-list'),
+                    ),
                   ]),
                   SizedBox(height: ScreenAdapter.height(24)),
                   _buildMenuGroup([
@@ -122,11 +127,6 @@ class UserView extends GetView<UserController> {
                       title: '意见反馈',
                       icon: Icons.feedback_outlined,
                       onTap: () => Get.toNamed('/question-feedback'),
-                    ),
-                    _MenuItem(
-                      title: '收货地址',
-                      icon: Icons.location_on_outlined,
-                      onTap: () => Get.toNamed('/address-list'),
                     ),
                     _MenuItem(
                       title: '平台资质',
